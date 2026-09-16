@@ -1,0 +1,7 @@
+id=hyperos_thermal_refresh_guard
+name=HyperOS Thermal Refresh Guard
+version=1.0.0
+versionCode=100
+author=E3N
+description=Preserve HyperOS dynamic refresh scheduling while neutralizing only the QTI display-fps thermal ceiling through a zero-resident systemless XML overlay. pudding / OS3.0.319.0.WPCCNXM only.
+
