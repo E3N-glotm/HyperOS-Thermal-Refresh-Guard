@@ -1,0 +1,24 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Static checks
+        run: bash tests/test_module.sh
+      - name: Build Magisk ZIP
+        run: bash build.sh
+      - name: Test ZIP
+        run: unzip -t dist/HyperOS-Thermal-Refresh-Guard-v1.0.0.zip
+      - name: SHA256
+        run: sha256sum dist/HyperOS-Thermal-Refresh-Guard-v1.0.0.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: HyperOS-Thermal-Refresh-Guard-v1.0.0
+          path: dist/HyperOS-Thermal-Refresh-Guard-v1.0.0.zip
+
