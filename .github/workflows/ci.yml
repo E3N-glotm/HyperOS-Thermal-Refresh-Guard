@@ -14,11 +14,16 @@ jobs:
       - name: Build Magisk ZIP
         run: bash build.sh
       - name: Test ZIP
-        run: unzip -t dist/HyperOS-Thermal-Refresh-Guard-v1.0.0.zip
+        run: |
+          version="$(awk -F= '$1=="version" {print $2}' module/module.prop)"
+          test -n "$version"
+          unzip -t "dist/HyperOS-Thermal-Refresh-Guard-v${version}.zip"
       - name: SHA256
-        run: sha256sum dist/HyperOS-Thermal-Refresh-Guard-v1.0.0.zip
+        run: |
+          version="$(awk -F= '$1=="version" {print $2}' module/module.prop)"
+          sha256sum "dist/HyperOS-Thermal-Refresh-Guard-v${version}.zip"
       - uses: actions/upload-artifact@v4
         with:
-          name: HyperOS-Thermal-Refresh-Guard-v1.0.0
-          path: dist/HyperOS-Thermal-Refresh-Guard-v1.0.0.zip
+          name: HyperOS-Thermal-Refresh-Guard
+          path: dist/HyperOS-Thermal-Refresh-Guard-v*.zip
 
