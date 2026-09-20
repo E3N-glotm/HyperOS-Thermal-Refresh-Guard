@@ -94,18 +94,23 @@ thermal state transition, is needed for end-to-end mitigation testing.
 
 ## Runtime footprint
 
-The installed module has no `service.sh`, no `post-fs-data.sh`, no daemon, no
-watcher, no polling loop and no wakelock. `customize.sh` runs only during
-installation and generates:
+The v1.1.0 module has no `service.sh`, daemon, watcher, polling loop or
+wakelock. `customize.sh` runs only during installation and generates:
 
 ```text
-$MODPATH/vendor/etc/display/thermallevel_to_fps.xml
+$MODPATH/private/thermallevel_to_fps.xml
 $MODPATH/compatibility.txt
+$MODPATH/post-fs-data.sh
 ```
 
-After reboot, Magisk's normal systemless mount exposes the generated XML at
-the stock vendor path. Disabling or uninstalling the module and rebooting
-restores the original vendor file automatically.
+The early `post-fs-data.sh` checks ROM, stock/vendor hash and the private map,
+bind-mounts the private file onto the vendor XML before SurfaceFlinger starts,
+writes a one-line `boot-status.txt` and exits. This avoids v1.0.0's inactive
+`$MODPATH/vendor` path and avoids a `system/thermal*` file that Scene's current
+thermal profile script rejects. Disabling or uninstalling and rebooting
+restores the original vendor file because the vendor partition is not edited.
+This boot path needs a real reboot A/B before claiming a completed device
+regression; a successful temporary bind mount is not equivalent.
 
 ## Scope that remains untouched
 

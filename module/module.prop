@@ -1,7 +1,7 @@
 id=hyperos_thermal_refresh_guard
 name=HyperOS Thermal Refresh Guard
-version=1.0.0
-versionCode=100
+version=1.1.0
+versionCode=110
 author=E3N
-description=Preserve HyperOS dynamic refresh scheduling while neutralizing only the QTI display-fps thermal ceiling through a zero-resident systemless XML overlay. pudding / OS3.0.319.0.WPCCNXM only.
+description=One-shot early boot display-fps map override; zero resident, no system/thermal* files conflicting with Scene's thermal profile scanner. pudding / OS3.0.319.0.WPCCNXM only.
 

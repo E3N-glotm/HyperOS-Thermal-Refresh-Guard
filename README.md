@@ -4,6 +4,8 @@
 
 一个尽量窄范围的 Magisk 模块：**只移除 QTI display-fps thermal ceiling，不强制系统常驻 120 Hz，也不关闭其它温控。**
 
+**v1.1.0 更正：** v1.0.0 安装器生成的 `$MODPATH/vendor/...` 文件，在实际冷启动核查中并未呈现为 `/vendor` 的有效挂载。v1.1.0 改为在 Magisk `post-fs-data.sh` 阶段一次性校验、bind-mount 私有 XML，随后立即退出；新增 `boot-status.txt` 供检查。此修复尚需用户安装重启后核对 SurfaceFlinger 视角，不能将旧版临时挂载 A/B 当成新版冷启动验收。
+
 ## 设计目标
 
 系统原有刷新率调度保持不变，例如：
@@ -33,13 +35,13 @@ Thermal AIDL cooling-device callback (display-fps)
 
 ## 续航与后台行为
 
-正式版 **没有 `service.sh`、`post-fs-data.sh` 或任何开机脚本**，因此没有常驻 shell、没有 `logcat`、没有轮询、没有 wakelock。安装阶段只生成 `vendor/etc/display/thermallevel_to_fps.xml`，之后由 Magisk 的 systemless mount 机制处理。
+v1.1.0 **只有一次性的 `post-fs-data.sh` 开机脚本**，早期挂载后退出：没有常驻 shell、`service.sh`、`logcat`、轮询或 wakelock。安装阶段生成 `private/thermallevel_to_fps.xml`，而不是放置在可能被 Scene 判定冲突的模块 `system/` 目录。
 
 这与早期 v0.1.0 原型不同；v0.1.0 使用 filtered `logcat` 捕获 thermal display 请求，仅用于验证思路，不作为正式架构保留。
 
 ## 当前兼容性
 
-v1.0.0 使用 fail-closed 策略，只允许以下已验证组合：
+v1.1.0 延续 fail-closed 策略，只允许以下已验证的设备、ROM 与原始配置组合。**版本 1.1.0 本身的冷启动挂载及 Scene 联动仍待真机验证。**
 
 | 项目 | 值 |
 | --- | --- |
@@ -54,9 +56,13 @@ v1.0.0 使用 fail-closed 策略，只允许以下已验证组合：
 ## 安装
 
 1. 使用 Magisk 安装 Release 中的 ZIP；
-2. 安装器会从本机 vendor XML 生成 120 Hz thermal ceiling 的 systemless 副本，不修改 `/vendor` 原文件；
+2. 安装器会从本机 vendor XML 生成 120 Hz thermal ceiling 的私有副本，不修改 `/vendor` 原文件；
 3. 重启手机；
-4. 重启后 `/vendor/etc/display/thermallevel_to_fps.xml` 应由 Magisk overlay 显示为 13 个 `fps="120"` 条目。
+4. 重启后检查模块中的 `boot-status.txt` 是否为 `MOUNTED`，并确认 SurfaceFlinger 所见 `/vendor/etc/display/thermallevel_to_fps.xml` 的 13 个条目均为 `fps="120"`；只看模块目录里的副本不算生效。
+
+### Scene 兼容性边界
+
+Scene 的本地温控配置位于 `/data/vendor/thermal/config`。v1.1.0 不修改该目录，且不在 Magisk 模块的 `system/` 目录放置名称含 `thermal` 的文件，以避免触发 Scene 当前脚本中的“其它模块修改温控文件”检查。**Guard 仍会固定显示系统的 thermal FPS ceiling，Scene 配置中涉及该显示上限的效果不会同时保留**；CPU/GPU 等其他温控策略原则上不受此 XML 修改影响。Scene 热切换的完整真机 A/B 仍需验证，不能保证所有 Scene 配置均兼容。
 
 ## 卸载与恢复
 

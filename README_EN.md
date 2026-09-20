@@ -4,6 +4,8 @@
 
 A narrowly scoped Magisk module that **neutralizes only the QTI display-fps thermal ceiling**, without forcing the system to stay at 120 Hz and without disabling the rest of the thermal stack.
 
+**v1.1.0 correction:** The v1.0.0 `$MODPATH/vendor/...` file did not appear at the actual `/vendor` path after a cold boot on the tested device. v1.1.0 generates the XML under `private/` and uses a single early `post-fs-data.sh` bind mount; the script verifies the stock map and then exits. A completed post-install reboot and Scene switching A/B are still required before claiming that the new version is fully validated on-device.
+
 ## Goal
 
 Keep HyperOS' normal dynamic refresh scheduler intact:
@@ -33,13 +35,13 @@ The PowerKeeper `cookie=253` path was also investigated. On this ROM its AIDL Di
 
 ## Battery / background overhead
 
-The formal release has **no `service.sh`, no `post-fs-data.sh`, and no boot-time script at all**. There is no resident shell, `logcat` listener, polling loop or wakelock. The generated XML is mounted by Magisk's normal systemless mechanism.
+v1.1.0 has **one short-lived `post-fs-data.sh` boot script** for its verified bind mount, which exits immediately. There is no `service.sh`, resident shell, `logcat` listener, polling loop or wakelock. The source file is under the module's `private/` directory, not `system/` or `vendor/`.
 
 The earlier v0.1.0 proof-of-concept used a filtered `logcat` listener. That architecture is intentionally not used in the formal release.
 
 ## Compatibility
 
-v1.0.0 is fail-closed and currently supports only the verified build:
+v1.1.0 is fail-closed and currently supports only the tested ROM baseline:
 
 | Item | Value |
 | --- | --- |
@@ -54,9 +56,13 @@ The installer aborts on any mismatch. Do not force-install this build after an O
 ## Install
 
 1. Install the ZIP from GitHub Releases in Magisk.
-2. The installer generates the systemless 120 Hz thermal-ceiling XML from the device's own vendor file.
+2. The installer generates a private 120 Hz thermal-ceiling XML from the device's own vendor file.
 3. Reboot.
-4. After reboot, the overlaid `/vendor/etc/display/thermallevel_to_fps.xml` should contain 13 `fps="120"` entries.
+4. After reboot, confirm the module's `boot-status.txt` reports `MOUNTED` and that SurfaceFlinger's actual view of `/vendor/etc/display/thermallevel_to_fps.xml` contains 13 entries of `fps="120"`. Having only the private file on disk does **not** establish that the module is active.
+
+## Scene compatibility
+
+Scene switches its thermal profiles under `/data/vendor/thermal/config`. This module does not modify that directory and deliberately has no `system/*thermal*` file which would trigger Scene's current "another module modifies thermal files" check. It does, however, maintain a constant 120-Hz ceiling for the **display-fps** cooling map, so any Scene profile's request to lower that particular ceiling cannot be preserved at the same time. Other Scene profile changes must be verified on-device; full Scene compatibility is not yet established.
 
 ## Uninstall / restore
 

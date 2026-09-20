@@ -2,13 +2,13 @@
 
 # HyperOS Thermal Refresh Guard
 #
-# There is no boot script and no resident process. Installation verifies the
-# exact tested ROM/vendor map, then generates a Magisk systemless replacement
-# from the device's own thermallevel_to_fps.xml. Only the FPS values are
-# changed; the XML structure and device-version layout remain stock-derived.
+# Installation verifies the tested ROM/vendor map and generates a private
+# replacement. A one-shot post-fs-data hook mounts it before SurfaceFlinger
+# starts, then exits. No resident process and no system/thermal* module file
+# that would trigger Scene's thermal-file collision checker.
 
 TARGET="/vendor/etc/display/thermallevel_to_fps.xml"
-OVERLAY="$MODPATH/vendor/etc/display/thermallevel_to_fps.xml"
+OVERLAY="$MODPATH/private/thermallevel_to_fps.xml"
 META="$MODPATH/compatibility.txt"
 
 EXPECTED_DEVICE="pudding"
@@ -39,7 +39,13 @@ VENDOR_SHA="$(sha256sum "$TARGET" 2>/dev/null | awk '{print $1}')"
 MAP_COUNT="$(grep -c '<ThermalLevelMap ' "$TARGET" 2>/dev/null)"
 [ "$MAP_COUNT" = "$EXPECTED_MAP_COUNT" ] || abort_compat "thermal map entry count=$MAP_COUNT, expected=$EXPECTED_MAP_COUNT"
 
-mkdir -p "${OVERLAY%/*}" || abort "Unable to create Magisk vendor overlay directory"
+mkdir -p "${OVERLAY%/*}" || abort "Unable to create private thermal map directory"
+
+# Remove old v1.0.0 paths from an in-place module update. Never leave a
+# system/vendor thermal file that Scene would interpret as a competing
+# replacement of its /data/vendor/thermal/config profiles.
+rm -f "$MODPATH/vendor/etc/display/thermallevel_to_fps.xml" \
+      "$MODPATH/system/vendor/etc/display/thermallevel_to_fps.xml"
 
 # Keep the vendor XML itself as the source of truth and change only its FPS
 # attributes. This removes the display-fps thermal ceiling while leaving the
@@ -66,19 +72,21 @@ overlay=$OVERLAY
 overlay_sha256=$OVERLAY_SHA
 thermal_map_entries=$MAP_COUNT
 thermal_fps_target=120
-architecture=magisk-systemless-xml-only
+architecture=one-shot-post-fs-data-private-bind
+scene_profile_directory=/data/vendor/thermal/config
 EOF
 
 set_perm "$OVERLAY" 0 0 0644
 set_perm "$META" 0 0 0644
+set_perm "$MODPATH/post-fs-data.sh" 0 0 0755
 chcon u:object_r:vendor_configs_file:s0 "$OVERLAY" 2>/dev/null || true
 
 ui_print "- Device: $DEVICE"
 ui_print "- ROM: $INCREMENTAL"
 ui_print "- Vendor thermal map SHA256 verified"
-ui_print "- Generated $MAP_COUNT-entry systemless thermal FPS map"
+ui_print "- Generated $MAP_COUNT-entry private thermal FPS map"
 ui_print "- Thermal FPS ceiling normalized to 120 Hz"
 ui_print "- HyperOS dynamic refresh scheduling remains enabled"
-ui_print "- No ELF/OAT patch, daemon, logcat watcher, polling or wakelock"
+ui_print "- One-shot early boot mount; no daemon, logcat, polling or wakelock"
 ui_print "- Reboot is required"
 
