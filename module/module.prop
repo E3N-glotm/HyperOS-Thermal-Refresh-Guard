@@ -1,7 +1,7 @@
 id=hyperos_thermal_refresh_guard
 name=HyperOS Thermal Refresh Guard
-version=1.1.0
-versionCode=110
+version=1.2.0
+versionCode=120
 author=E3N
-description=One-shot early boot display-fps map override; zero resident, no system/thermal* files conflicting with Scene's thermal profile scanner. pudding / OS3.0.319.0.WPCCNXM only.
+description=Two-path thermal display FPS guard: early vendor map override plus PowerKeeper framework thermal vote gate and one-shot cleanup. No resident watcher. pudding / OS3.0.319.0.WPCCNXM only.
 

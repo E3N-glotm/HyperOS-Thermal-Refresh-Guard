@@ -49,6 +49,23 @@ other non-thermal reasons. The module does not change those votes or settings.
 
 ## PowerKeeper / DisplayFeature investigation
 
+### Independent PowerKeeper framework thermal vote (2026-09-23)
+
+Even with the v1.1.0 vendor map mounted and visible to SurfaceFlinger as 13
+`fps=120` entries, the phone reported `thermal_limit_refresh_rate=60` at
+09:36 and the DisplayModeDirector history contained a 60-Hz
+`PRIORITY_THERMAL_LIMIT_REFRESH_RATE` vote. A SettingsProvider message
+identified `com.miui.powerkeeper` as a writer of the same setting when it
+returned to 0. Thus the display-fps map is not the only input limiting FPS.
+
+The installed `DisplayFrameSetting.setScreenEffect(int fps, int cookie)`
+checks `ro.vendor.fps.switch.thermal` when deciding whether to write
+`Settings.System.thermal_limit_refresh_rate`. The original v1.1.0 had not
+disabled this property; v1.2.0 uses Magisk `resetprop` before PowerKeeper
+initialization and clears the retained setting with a one-shot late-start
+script. This does not suppress the vendor `setScreenEffect` call or prove that
+all other vendor/application FPS limiters are absent.
+
 PowerKeeper contains this dedicated call path:
 
 ```text
@@ -94,27 +111,31 @@ thermal state transition, is needed for end-to-end mitigation testing.
 
 ## Runtime footprint
 
-The v1.1.0 module has no `service.sh`, daemon, watcher, polling loop or
-wakelock. `customize.sh` runs only during installation and generates:
+The v1.2.0 module has no resident daemon, watcher, polling loop or wakelock.
+The installer generates:
 
 ```text
 $MODPATH/private/thermallevel_to_fps.xml
 $MODPATH/compatibility.txt
 $MODPATH/post-fs-data.sh
+$MODPATH/service.sh
 ```
 
 The early `post-fs-data.sh` checks ROM, stock/vendor hash and the private map,
 bind-mounts the private file onto the vendor XML before SurfaceFlinger starts,
-writes a one-line `boot-status.txt` and exits. This avoids v1.0.0's inactive
+gates the single PowerKeeper thermal FPS property, writes `boot-status.txt`
+and exits. The late-start service runs once to clear any saved framework
+thermal FPS value and writes `framework-status.txt`. This avoids v1.0.0's inactive
 `$MODPATH/vendor` path and avoids a `system/thermal*` file that Scene's current
 thermal profile script rejects. Disabling or uninstalling and rebooting
 restores the original vendor file because the vendor partition is not edited.
-This boot path needs a real reboot A/B before claiming a completed device
-regression; a successful temporary bind mount is not equivalent.
+The v1.1.0 mount was confirmed after reboot, but the new v1.2.0 property/
+framework behavior requires its own cold-boot test. A successful ZIP install
+or a temporary bind mount is not equivalent to this test.
 
 ## Scope that remains untouched
 
 The module does not change CPU/GPU thermal throttling, battery or charging
 protection, other cooling devices, kernel thermal zones, PMIC protections,
-PowerKeeper package code, DisplayFeature binaries, refresh-rate settings,
+PowerKeeper package code, DisplayFeature binaries, user peak/min refresh settings,
 Touch Boost, Smart DFPS, video/camera policy or app-specific refresh policy.

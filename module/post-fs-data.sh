@@ -36,7 +36,18 @@ fi
 SOURCE_SHA="$(sha256sum "$SOURCE" | cut -d ' ' -f 1)"
 if mount -o bind "$SOURCE" "$TARGET"; then
   if [ "$(sha256sum "$TARGET" | cut -d ' ' -f 1)" = "$SOURCE_SHA" ]; then
-    report 'MOUNTED: private thermal map bound before SurfaceFlinger startup'
+    # PowerKeeper independently writes Settings.System thermal_limit_refresh_rate
+    # on this exact ROM. The XML alone cannot neutralize that framework vote.
+    # This property gates only the PowerKeeper write to that key; the vendor
+    # DisplayFeature request and ordinary dynamic scheduling still execute.
+    # Set it before PowerKeeper constructs DisplayFrameSetting.
+    if command -v resetprop >/dev/null 2>&1 &&
+       resetprop ro.vendor.fps.switch.thermal false &&
+       [ "$(getprop ro.vendor.fps.switch.thermal)" = false ]; then
+      report 'MOUNTED: thermal XML active; PowerKeeper framework thermal setting writes gated'
+    else
+      report 'PARTIAL: thermal XML active but PowerKeeper thermal property override failed'
+    fi
   else
     umount "$TARGET" 2>/dev/null || true
     report 'FAILED: bind verification mismatch; stock retained'
