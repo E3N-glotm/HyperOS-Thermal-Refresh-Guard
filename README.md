@@ -4,7 +4,9 @@
 
 一个尽量窄范围的 Magisk 模块：**同时处理 QTI display-fps 映射与 PowerKeeper 写入的 framework 热限帧设置，不强制系统常驻 120 Hz，也不关闭整套温控。**
 
-**v1.2.0 的修复依据：** 2026-09-23 真机确认 v1.1.0 已在 SurfaceFlinger 中成功挂载 13 项 `fps=120`，但系统 `thermal_limit_refresh_rate` 仍曾为 `60`，显示管理器历史记录出现独立的 `PRIORITY_THERMAL_LIMIT_REFRESH_RATE` 60 Hz 投票。PowerKeeper 日志明确出现对该设置的写入。v1.2.0 新增一次性开机 PowerKeeper 设置写入门控与遗留设置清理。**它仍需重启后的真机复测，不应因为 ZIP 安装成功就声称高温时一定保持 120 FPS。**
+**v1.2.1 启动时序修复：** 2026-09-23 真机重启后确认 v1.2.0 的 XML 映射已由 SurfaceFlinger 实际加载、`ro.vendor.fps.switch.thermal=false`、`thermal_limit_refresh_rate=0`，当时没有独立的 framework thermal 60 Hz 投票。与此同时，一次性晚启动脚本在 SettingsProvider 尚未就绪时误记了 `FAILED`。v1.2.1 将此清理动作改为仅在本次启动中限时等待设置服务，完成后立即退出；不增加常驻进程。**屏幕闲置时仍可显示 60 FPS；这不是高温限帧是否解除的充分证据。尚未人为制造高温复测。**
+
+**v1.2.0 的修复依据：** 2026-09-23 真机确认 v1.1.0 已在 SurfaceFlinger 中成功挂载 13 项 `fps=120`，但系统 `thermal_limit_refresh_rate` 仍曾为 `60`，显示管理器历史记录出现独立的 `PRIORITY_THERMAL_LIMIT_REFRESH_RATE` 60 Hz 投票。PowerKeeper 日志明确出现对该设置的写入。v1.2.0 新增一次性开机 PowerKeeper 设置写入门控与遗留设置清理。**其冷启动两条路径目前已核实，但自然高温下其他厂商限帧或单个 App 的上限仍需进一步核查。**
 
 **v1.1.0 历史更正：** v1.0.0 安装器生成的 `$MODPATH/vendor/...` 文件在实际冷启动后未正确挂载。v1.1.0 改为 Magisk `post-fs-data.sh` 一次性 bind-mount 私有 XML，并在 2026-09-23 的冷启动状态中确认 SurfaceFlinger 确实看到该映射；后续高温 60 FPS 的问题来自 XML 之外的独立设置，见上文 v1.2.0 修复依据。
 

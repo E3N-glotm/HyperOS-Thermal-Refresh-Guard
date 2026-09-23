@@ -1,5 +1,21 @@
 # Technical notes
 
+## v1.2.1 boot verification
+
+At 10:02 local time on 2026-09-23, cold-boot verification showed that
+SurfaceFlinger and the global vendor path saw the same 13-entry all-120 map,
+`ro.vendor.fps.switch.thermal=false`, and
+`Settings.System.thermal_limit_refresh_rate=0`. The display director had no
+active `PRIORITY_THERMAL_LIMIT_REFRESH_RATE` vote in the inspected snapshots.
+The display could still report 60-Hz render rate under ordinary idle/MIUI
+votes; that is not itself evidence of a thermal ceiling.
+
+The v1.2.0 late one-shot boot script recorded `FAILED` before SettingsProvider
+was ready despite the setting eventually reading 0. v1.2.1 bounds the one-shot
+startup wait to 40 seconds, only clears the framework thermal setting after
+system boot readiness, and exits without a persistent watcher. Do not claim
+an unperformed natural high-temperature stress test has passed.
+
 ## Verified target
 
 - device: Xiaomi `pudding` / 25113PN0EC

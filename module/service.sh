@@ -14,13 +14,30 @@ if [ "$(getprop ro.product.device)" != pudding ] ||
   exit 0
 fi
 
-OLD="$(settings get system thermal_limit_refresh_rate 2>/dev/null)"
-if [ "$OLD" = 0 ]; then
-  printf '%s\n' 'READY: framework thermal FPS cap is already zero' > "$RESULT"
-elif settings put system thermal_limit_refresh_rate 0 &&
-     [ "$(settings get system thermal_limit_refresh_rate 2>/dev/null)" = 0 ]; then
-  printf '%s\n' 'CLEARED: framework thermal FPS cap reset to zero' > "$RESULT"
-else
-  printf '%s\n' 'FAILED: could not clear framework thermal FPS cap' > "$RESULT"
-fi
+# On this ROM Magisk late_start service can run before SettingsProvider has
+# finished publishing its System table. v1.2.0 wrote a false FAILED status at
+# that point even though the key later became 0. Wait only during this single
+# boot invocation (maximum 40 seconds), then exit; never leave a watcher.
+attempt=0
+while [ "$attempt" -lt 20 ]; do
+  attempt=$((attempt + 1))
+  if [ "$(getprop sys.boot_completed)" = 1 ]; then
+    OLD="$(settings get system thermal_limit_refresh_rate 2>/dev/null)"
+    if [ "$OLD" = 0 ]; then
+      printf '%s\n' 'READY: framework thermal FPS cap is zero' > "$RESULT"
+      exit 0
+    fi
+    if [ "$OLD" = null ] && settings list system >/dev/null 2>&1; then
+      printf '%s\n' 'READY: no framework thermal FPS cap is set' > "$RESULT"
+      exit 0
+    fi
+    if settings put system thermal_limit_refresh_rate 0 2>/dev/null &&
+       [ "$(settings get system thermal_limit_refresh_rate 2>/dev/null)" = 0 ]; then
+      printf '%s\n' 'CLEARED: framework thermal FPS cap reset to zero' > "$RESULT"
+      exit 0
+    fi
+  fi
+  sleep 2
+done
+printf '%s\n' 'FAILED: SettingsProvider was not ready or framework cap could not be cleared within 40 seconds' > "$RESULT"
 exit 0
