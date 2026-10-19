@@ -13,8 +13,8 @@ report() {
 }
 
 if [ "$(getprop ro.product.device)" != pudding ] ||
-   [ "$(getprop ro.build.version.incremental)" != OS3.0.319.0.WPCCNXM ] ||
-   [ "$(getprop ro.build.version.sdk)" != 36 ]; then
+   [ "$(getprop ro.build.version.incremental)" != OS4.0.4.0.XPCCNXM ] ||
+   [ "$(getprop ro.build.version.sdk)" != 37 ]; then
   report 'SKIPPED: device or ROM changed; stock display configuration retained'
   exit 0
 fi
