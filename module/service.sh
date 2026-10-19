@@ -7,7 +7,7 @@ MODDIR="${0%/*}"
 STATUS="$MODDIR/boot-status.txt"
 RESULT="$MODDIR/framework-status.txt"
 if [ "$(getprop ro.product.device)" != pudding ] ||
-   [ "$(getprop ro.build.version.incremental)" != OS3.0.319.0.WPCCNXM ] ||
+   [ "$(getprop ro.build.version.incremental)" != OS4.0.4.0.XPCCNXM ] ||
    [ "$(getprop ro.vendor.fps.switch.thermal)" != false ] ||
    ! grep -q '^MOUNTED:' "$STATUS" 2>/dev/null; then
   printf '%s\n' 'SKIPPED: early boot verification/property gate was not successful' > "$RESULT"
