@@ -1,0 +1,48 @@
+name: Publish Magisk Release
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'module/module.prop'
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate module and build installable ZIP
+        run: |
+          bash tests/test_module.sh
+          bash build.sh
+          version="$(sed -n 's/^version=//p' module/module.prop)"
+          test -n "$version"
+          unzip -t "dist/HyperOS-Thermal-Refresh-Guard-v${version}.zip"
+      - name: Create version tag and attach binary ZIP
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          version="$(sed -n 's/^version=//p' module/module.prop)"
+          tag="v${version}"
+          zip="dist/HyperOS-Thermal-Refresh-Guard-v${version}.zip"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "Release $tag already exists; refusing to overwrite."
+            exit 0
+          fi
+          checksum="$(sha256sum "$zip" | awk '{print $1}')"
+          {
+            echo "Android 17 / HyperOS OS4.0.4.0.XPCCNXM (pudding) compatibility release."
+            echo
+            echo "Validated: cold-boot vendor thermal map bind, PowerKeeper thermal FPS setting gate, no framework 60-Hz thermal vote under observed conditions. Not guaranteed for all apps or thermal states."
+            echo
+            echo "Exact device/ROM/SDK/vendor-map SHA256 gating; CPU/GPU and battery thermal protections are not modified."
+            echo
+            echo "Magisk ZIP SHA256: \`$checksum\`"
+          } > RELEASE_NOTES.md
+          git tag "$tag"
+          git push origin "$tag"
+          gh release create "$tag" "$zip" --title "HyperOS Thermal Refresh Guard $tag" --notes-file RELEASE_NOTES.md --prerelease
