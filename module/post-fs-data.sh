@@ -25,10 +25,10 @@ valid "$SOURCE_SHA" && valid "$OVERLAY_SHA" ||
 [ "$(sha "$TARGET")" = "$SOURCE_SHA" ] &&
 [ "$(sha "$SOURCE")" = "$OVERLAY_SHA" ] &&
 [ "$(grep -c '<ThermalLevelMap[[:space:]]' "$SOURCE")" = "$COUNT" ] &&
-! grep '<ThermalLevelMap[[:space:]]' "$SOURCE" | grep -qv 'fps="120"' ||
+[ "$(grep '<ThermalLevelMap[[:space:]]' "$SOURCE" | grep -c 'fps="120"')" = "$COUNT" ] ||
   { report 'SKIPPED: thermal API changed or source fingerprint invalid; reinstall to reprobe'; exit 0; }
 if /system/bin/nsenter -t 1 -m -- /system/bin/mount --bind "$SOURCE" "$TARGET"; then
-  if [ "$(sha "$TARGET")" = "$SOURCE_SHA" ]; then
+  if [ "$(sha "$TARGET")" = "$OVERLAY_SHA" ]; then
     # PowerKeeper independently writes Settings.System thermal_limit_refresh_rate
     # on this exact ROM. The XML alone cannot neutralize that framework vote.
     # This property gates only the PowerKeeper write to that key; the vendor
