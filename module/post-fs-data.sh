@@ -6,36 +6,29 @@ MODDIR="${0%/*}"
 TARGET="/vendor/etc/display/thermallevel_to_fps.xml"
 SOURCE="$MODDIR/private/thermallevel_to_fps.xml"
 STATUS="$MODDIR/boot-status.txt"
-STOCK_SHA="49c0a52abc0453d7f2345439f7e411282bab7c6a8196720d5277a12759d76d7e"
-
-report() {
-  printf '%s\n' "$1" > "$STATUS"
-}
-
-if [ "$(getprop ro.product.device)" != pudding ] ||
-   [ "$(getprop ro.build.version.incremental)" != OS4.0.4.0.XPCCNXM ] ||
-   [ "$(getprop ro.build.version.sdk)" != 37 ]; then
-  report 'SKIPPED: device or ROM changed; stock display configuration retained'
-  exit 0
-fi
-
-if [ ! -r "$TARGET" ] || [ ! -r "$SOURCE" ]; then
-  report 'SKIPPED: stock or private thermal map unavailable'
-  exit 0
-fi
-
-# Refuse to stack on a ROM update, another active display-map modification or
-# a partially written private map. Guard never edits the vendor partition.
-if [ "$(sha256sum "$TARGET" | cut -d ' ' -f 1)" != "$STOCK_SHA" ] ||
-   [ "$(grep -c '<ThermalLevelMap ' "$SOURCE")" != 13 ] ||
-   grep '<ThermalLevelMap ' "$SOURCE" | grep -qv 'fps="120"'; then
-  report 'SKIPPED: incompatible or modified thermal map; stock retained'
-  exit 0
-fi
-
-SOURCE_SHA="$(sha256sum "$SOURCE" | cut -d ' ' -f 1)"
-if mount -o bind "$SOURCE" "$TARGET"; then
-  if [ "$(sha256sum "$TARGET" | cut -d ' ' -f 1)" = "$SOURCE_SHA" ]; then
+META="$MODDIR/compatibility.txt"
+report() { printf '%s\n' "$1" > "$STATUS"; }
+sha() { sha256sum "$1" 2>/dev/null | cut -d ' ' -f1; }
+valid() { [ "$(expr "$1" : '[a-f0-9]*$')" = 64 ]; }
+[ "$(getprop ro.product.device)" = pudding ] || { report 'SKIPPED: display hardware profile changed'; exit 0; }
+[ -x /system/bin/nsenter ] && [ -r "$META" ] ||
+  { report 'SKIPPED: mount interface or install metadata missing'; exit 0; }
+SOURCE_SHA="$(sed -n 's/^source_sha256=//p' "$META")"
+OVERLAY_SHA="$(sed -n 's/^overlay_sha256=//p' "$META")"
+COUNT="$(sed -n 's/^thermal_map_entries=//p' "$META")"
+valid "$SOURCE_SHA" && valid "$OVERLAY_SHA" ||
+  { report 'SKIPPED: invalid source/overlay SHA metadata'; exit 0; }
+[ "$COUNT" -ge 1 ] && [ "$COUNT" -le 64 ] 2>/dev/null ||
+  { report 'SKIPPED: unsupported XML entry count'; exit 0; }
+[ -r "$TARGET" ] && [ -r "$SOURCE" ] &&
+[ -n "$(getprop ro.vendor.fps.switch.thermal)" ] &&
+[ "$(sha "$TARGET")" = "$SOURCE_SHA" ] &&
+[ "$(sha "$SOURCE")" = "$OVERLAY_SHA" ] &&
+[ "$(grep -c '<ThermalLevelMap[[:space:]]' "$SOURCE")" = "$COUNT" ] &&
+! grep '<ThermalLevelMap[[:space:]]' "$SOURCE" | grep -qv 'fps="120"' ||
+  { report 'SKIPPED: thermal API changed or source fingerprint invalid; reinstall to reprobe'; exit 0; }
+if /system/bin/nsenter -t 1 -m -- /system/bin/mount --bind "$SOURCE" "$TARGET"; then
+  if [ "$(sha "$TARGET")" = "$SOURCE_SHA" ]; then
     # PowerKeeper independently writes Settings.System thermal_limit_refresh_rate
     # on this exact ROM. The XML alone cannot neutralize that framework vote.
     # This property gates only the PowerKeeper write to that key; the vendor
@@ -49,7 +42,7 @@ if mount -o bind "$SOURCE" "$TARGET"; then
       report 'PARTIAL: thermal XML active but PowerKeeper thermal property override failed'
     fi
   else
-    umount "$TARGET" 2>/dev/null || true
+    /system/bin/nsenter -t 1 -m -- /system/bin/umount "$TARGET" 2>/dev/null || true
     report 'FAILED: bind verification mismatch; stock retained'
   fi
 else
