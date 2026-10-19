@@ -5,6 +5,12 @@ on:
     branches: [main]
     paths:
       - 'module/module.prop'
+      - 'module/customize.sh'
+      - 'module/post-fs-data.sh'
+      - 'module/service.sh'
+      - 'tests/test_module.sh'
+      - '.github/workflows/publish.yml'
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -35,11 +41,11 @@ jobs:
           fi
           checksum="$(sha256sum "$zip" | awk '{print $1}')"
           {
-            echo "Android 17 / HyperOS OS4.0.4.0.XPCCNXM (pudding) compatibility release."
+            echo "Capability-detected pudding display thermal FPS module, independent of Android/HyperOS build string."
             echo
             echo "Validated: cold-boot vendor thermal map bind, PowerKeeper thermal FPS setting gate, no framework 60-Hz thermal vote under observed conditions. Not guaranteed for all apps or thermal states."
             echo
-            echo "Exact device/ROM/SDK/vendor-map SHA256 gating; CPU/GPU and battery thermal protections are not modified."
+            echo "Installer probes ThermalLevelMap XML, FPS property and PID1 mount. The OEM source fingerprint is pinned at install time and revalidated each boot; OTA XML changes require reinstall. CPU/GPU and battery thermal protections remain unchanged."
             echo
             echo "Magisk ZIP SHA256: \`$checksum\`"
           } > RELEASE_NOTES.md
