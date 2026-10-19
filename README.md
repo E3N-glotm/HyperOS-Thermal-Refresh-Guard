@@ -1,5 +1,13 @@
 # HyperOS Thermal Refresh Guard
 
+## v1.4.0: 按实际接口兼容 / Capability detection
+
+- 移除固定 HyperOS build、SDK 和硬编码原厂热控 XML SHA 白名单；安装时探测 **pudding 显示硬件**、`ThermalLevelMap` XML 与 `fps` 属性、`ro.vendor.fps.switch.thermal` 及 PID1 mount 能力。
+- 仅替换热控 XML 中 `ThermalLevelMap` 行的 `fps` 字段，不触碰其他非热控 FPS 字段。
+- 安装时保存原厂文件 SHA 和新覆盖文件 SHA；**OTA 后内容变更则开机跳过，需重装才能重新探测并生成**，不会在新系统上继续覆盖旧 XML。
+- 保留 CPU/GPU/电池和其他设备保护，不尝试通用关闭全局温控。因为操作会影响屏幕温控降刷新率策略，仍仅面向已验证的 pudding 显示硬件。
+
+
 [中文](README.md) | [English](README_EN.md)
 
 **v1.3.0 · 2026-10-19 HyperOS 4 / Android 17 适配：** 已在 Xiaomi pudding 的 `OS4.0.4.0.XPCCNXM`（API 37）完成冷启动核验：原厂 `thermallevel_to_fps.xml` 的 SHA256 仍为 `49c0a52a…27a12759d76d7e`，运行时私有映射已挂载，`ro.vendor.fps.switch.thermal=false`、`thermal_limit_refresh_rate=0`、当前 120Hz 且未观察到旧的 60Hz framework thermal vote。安装器现在严格识别 HyperOS 4 的精确 ROM/API 与 XML 校验值；不因相同设备代号而自动允许其他版本。尚未对所有 App 或极端高温完成性能验收，**不是全局锁 120Hz**。旧 HyperOS 3 用户可使用 [v1.2.1](https://github.com/E3N-glotm/HyperOS-Thermal-Refresh-Guard/releases/tag/v1.2.1)。
