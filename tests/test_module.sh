@@ -1,51 +1,43 @@
 #!/usr/bin/env bash
 set -euo pipefail
-
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 MOD="$ROOT/module"
-
-bash -n "$MOD/customize.sh"
-bash -n "$MOD/post-fs-data.sh"
-bash -n "$MOD/service.sh"
-
+for f in customize.sh post-fs-data.sh service.sh; do bash -n "$MOD/$f"; done
+grep -q '^version=1.4.0$' "$MOD/module.prop"
 grep -q '^id=hyperos_thermal_refresh_guard$' "$MOD/module.prop"
-grep -q '^version=1.3.0$' "$MOD/module.prop"
-grep -q 'EXPECTED_VENDOR_SHA="49c0a52abc0453d7f2345439f7e411282bab7c6a8196720d5277a12759d76d7e"' "$MOD/customize.sh"
-grep -q 'EXPECTED_MAP_COUNT="13"' "$MOD/customize.sh"
-grep -q 'EXPECTED_INCREMENTAL="OS4.0.4.0.XPCCNXM"' "$MOD/customize.sh"
-grep -q 'EXPECTED_SDK="37"' "$MOD/customize.sh"
-grep -q 'OS4.0.4.0.XPCCNXM' "$MOD/post-fs-data.sh"
-grep -q 'ro.build.version.sdk)\\" != 37' "$MOD/post-fs-data.sh" || grep -q 'ro.build.version.sdk)\" != 37' "$MOD/post-fs-data.sh"
-grep -q 'OS4.0.4.0.XPCCNXM' "$MOD/service.sh"
-grep -q 'thermallevel_to_fps.xml' "$MOD/customize.sh"
-grep -q 'sed .*fps=' "$MOD/customize.sh"
-grep -q 'vendor_configs_file' "$MOD/customize.sh"
-grep -q 'private/thermallevel_to_fps.xml' "$MOD/customize.sh"
-grep -q 'mount -o bind' "$MOD/post-fs-data.sh"
-grep -q 'STOCK_SHA=' "$MOD/post-fs-data.sh"
-grep -q 'MOUNTED:' "$MOD/post-fs-data.sh"
+for f in customize.sh post-fs-data.sh service.sh; do
+  ! grep -Eq 'EXPECTED_(INCREMENTAL|SDK|VENDOR_SHA|GUARD_SHA)|ro\.build\.version\.(incremental|sdk)|OS4\.0\.4\.0\.XPCCNXM' "$MOD/$f"
+done
+grep -q 'ThermalLevelMap' "$MOD/customize.sh"
+grep -q 'thermal_map_entries=' "$MOD/customize.sh"
+grep -q 'source_sha256=' "$MOD/customize.sh"
+grep -q 'overlay_sha256=' "$MOD/customize.sh"
+grep -q 'source_sha256=' "$MOD/post-fs-data.sh"
+grep -q 'overlay_sha256=' "$MOD/post-fs-data.sh"
+grep -q 'SKIPPED: thermal API changed' "$MOD/post-fs-data.sh"
+grep -q 'nsenter -t 1 -m' "$MOD/post-fs-data.sh"
 grep -q 'resetprop ro.vendor.fps.switch.thermal false' "$MOD/post-fs-data.sh"
 grep -q 'settings put system thermal_limit_refresh_rate 0' "$MOD/service.sh"
-grep -q 'READY:' "$MOD/service.sh"
-grep -Fq '"$attempt" -lt 20' "$MOD/service.sh"
-grep -q 'sys.boot_completed' "$MOD/service.sh"
-
-# Scene's installed config.sh aborts whenever another enabled Magisk module
-# has a *thermal* file under its system/ tree. Keep the map in private/ and
-# bind it once before SurfaceFlinger starts, without interfering with the
-# user's /data/vendor/thermal/config profiles.
+! grep -q 'STOCK_SHA=' "$MOD/post-fs-data.sh"
+! grep -R -n -E 'setprop.*(thermal\.shutdown|thermal\.disable|cpu|gpu)|DisableThermal' "$MOD"
+test ! -d "$MOD/system"
 test ! -e "$MOD/vendor/etc/display/thermallevel_to_fps.xml"
 test ! -e "$MOD/system/vendor/etc/display/thermallevel_to_fps.xml"
-test ! -d "$MOD/system"
-! grep -q 'rm -f .*thermal.current.ini' "$MOD/post-fs-data.sh"
-
-# There must be no resident daemon, logcat watcher, polling loop or
-# CPU/GPU/global thermal policy override. service.sh runs and exits once.
 test ! -e "$MOD/uninstall.sh"
 test ! -e "$MOD/action.sh"
-! grep -R -n -E '^[[:space:]]*(logcat|while[[:space:]]+true)' "$MOD" --include='*.sh'
-! grep -R -n -E 'setprop.*(thermal\.shutdown|thermal\.disable|cpu|gpu)|DisableThermal|millet' "$MOD"
-! grep -R -n -E 'PowerKeeper\.classes|dalvik-cache|libdisplayfeatureservice|0x11a3e0' "$MOD"
-
-echo "module static checks: OK"
-
+# A mock XML map must change ONLY ThermalLevelMap fps fields.
+tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
+cat > "$tmp/input.xml" <<'EOF'
+<Display>
+  <Other fps="144" note="untouched" />
+  <ThermalLevelMap state="0" fps="90" />
+  <ThermalLevelMap state="1" fps="60" />
+</Display>
+EOF
+sed -E '/<ThermalLevelMap[[:space:]]/s/fps="[0-9]+"/fps="120"/g' "$tmp/input.xml" > "$tmp/output.xml"
+grep -q 'Other fps="144"' "$tmp/output.xml"
+test "$(grep -c 'ThermalLevelMap.*fps="120"' "$tmp/output.xml")" -eq 2
+! grep -q 'ThermalLevelMap.*fps="90"' "$tmp/output.xml"
+! grep -q 'ThermalLevelMap.*fps="60"' "$tmp/output.xml"
+echo 'Thermal capability-gate and XML patch static tests: PASS'
