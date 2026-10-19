@@ -2,7 +2,7 @@
 
 # HyperOS Thermal Refresh Guard
 #
-# Installation verifies the tested ROM/vendor map and generates a private
+# Installation probes the vendor thermal XML interface and its source fingerprint and generates a private
 # replacement. A one-shot post-fs-data hook mounts it before SurfaceFlinger
 # starts, then exits. No resident process and no system/thermal* module file
 # that would trigger Scene's thermal-file collision checker.
@@ -16,7 +16,7 @@ EXPECTED_MAP_MAX="64"
 EXPECTED_FRAMEWORK_PROPERTY="ro.vendor.fps.switch.thermal"
 
 abort_compat() {
-  ui_print "! Unsupported device / ROM thermal map"
+  ui_print "! Unsupported vendor display/thermal interface"
   ui_print "! $1"
   ui_print "! No systemless override was generated"
   abort "$1"
@@ -66,10 +66,10 @@ sed -E '/<ThermalLevelMap[[:space:]]/s/fps="[0-9]+"/fps="120"/g' "$MAP_INPUT" > 
   abort "Unable to generate thermal FPS overlay"
 
 [ -s "$OVERLAY" ] || abort "Generated overlay is empty"
-[ "$(grep -c '<ThermalLevelMap ' "$OVERLAY" 2>/dev/null)" = "$MAP_COUNT" ] || \
+[ "$(grep -c '<ThermalLevelMap[[:space:]]' "$OVERLAY" 2>/dev/null)" = "$MAP_COUNT" ] || \
   abort "Generated overlay entry count mismatch"
 
-if grep '<ThermalLevelMap ' "$OVERLAY" | grep -vq 'fps="120"'; then
+if grep '<ThermalLevelMap[[:space:]]' "$OVERLAY" | grep -vq 'fps="120"'; then
   abort "Generated overlay contains a non-120 thermal FPS target"
 fi
 
@@ -77,7 +77,7 @@ OVERLAY_SHA="$(sha256sum "$OVERLAY" 2>/dev/null | awk '{print $1}')"
 cat > "$META" <<EOF
 device=$DEVICE
 source=$TARGET
-source_sha256=$VENDOR_SHA
+source_sha256=$SOURCE_SHA
 overlay=$OVERLAY
 overlay_sha256=$OVERLAY_SHA
 thermal_map_entries=$MAP_COUNT
@@ -92,7 +92,7 @@ set_perm "$OVERLAY" 0 0 0644
 set_perm "$META" 0 0 0644
 set_perm "$MODPATH/post-fs-data.sh" 0 0 0755
 set_perm "$MODPATH/service.sh" 0 0 0755
-chcon u:object_r:vendor_configs_file:s0 "$OVERLAY" 2>/dev/null || true
+chcon u:object_r:vendor_configs_file:s0 "$OVERLAY" 2>/dev/null || abort_compat "vendor XML SELinux label incompatible"
 
 ui_print "- Device: $DEVICE"
 ui_print "- OEM thermal capability: ThermalLevelMap supported"
