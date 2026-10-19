@@ -1,7 +1,7 @@
 id=hyperos_thermal_refresh_guard
 name=HyperOS Thermal Refresh Guard
-version=1.2.1
-versionCode=121
+version=1.3.0
+versionCode=130
 author=E3N
-description=Two-path thermal display FPS guard: early vendor map override plus PowerKeeper framework thermal vote gate and one-shot cleanup. No resident watcher. pudding / OS3.0.319.0.WPCCNXM only.
+description=Android 17 HyperOS 4.0.4.0 (pudding) display thermal FPS guard; vendor SHA256 & ROM gated. Stops display thermal FPS cap while keeping original dynamic refresh and CPU/GPU/battery protections.
 
