@@ -1,5 +1,7 @@
 # HyperOS Thermal Refresh Guard
 
+**v1.3.0 (2026-10-19) — HyperOS 4 / Android 17 compatibility.** Verified on Xiaomi pudding, `OS4.0.4.0.XPCCNXM` (API 37): the OEM vendor thermal XML retains its known SHA256, the private 13-entry display-FPS map mounted successfully at cold boot, the PowerKeeper thermal FPS setting gate was applied, and no old framework 60-Hz thermal vote was seen. The installer now gates the exact ROM/API/vendor checksum. This is **not** a blanket 120-FPS lock and does not establish results for every app or high-temperature condition. HyperOS 3 users should remain on [v1.2.1](https://github.com/E3N-glotm/HyperOS-Thermal-Refresh-Guard/releases/tag/v1.2.1).
+
 [中文](README.md) | [English](README_EN.md)
 
 A narrowly scoped Magisk module targeting both the QTI display-fps thermal ceiling and PowerKeeper's independent framework thermal FPS setting, without forcing constant 120 Hz or disabling the entire thermal stack.
@@ -22,7 +24,7 @@ Keep HyperOS' normal dynamic refresh scheduler intact:
 
 ## Implementation
 
-One of two observed thermal-refresh paths on `pudding / OS3.0.319.0.WPCCNXM` is:
+One of two observed thermal-refresh paths on `pudding / OS4.0.4.0.XPCCNXM` is:
 
 ```text
 Thermal AIDL cooling-device callback (display-fps)
@@ -52,8 +54,8 @@ v1.2.0 is fail-closed and currently supports only the tested ROM baseline. The v
 | Item | Value |
 | --- | --- |
 | Device | Xiaomi `pudding` / 25113PN0EC |
-| ROM | HyperOS `OS3.0.319.0.WPCCNXM` |
-| Android | 16 / API 36 |
+| ROM | HyperOS `OS4.0.4.0.XPCCNXM` |
+| Android | 16 / API 37 |
 | Stock thermal FPS XML SHA256 | `49c0a52abc0453d7f2345439f7e411282bab7c6a8196720d5277a12759d76d7e` |
 | ThermalLevelMap entries | 13 |
 
