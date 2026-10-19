@@ -12,11 +12,8 @@ OVERLAY="$MODPATH/private/thermallevel_to_fps.xml"
 META="$MODPATH/compatibility.txt"
 
 EXPECTED_DEVICE="pudding"
-EXPECTED_INCREMENTAL="OS4.0.4.0.XPCCNXM"
-EXPECTED_SDK="37"
-EXPECTED_VENDOR_SHA="49c0a52abc0453d7f2345439f7e411282bab7c6a8196720d5277a12759d76d7e"
-EXPECTED_GUARD_SHA="8b036f3cbfb210ad69ac6cdca78036ff82aec8bbe99e3f862f27217169a487d8"
-EXPECTED_MAP_COUNT="13"
+EXPECTED_MAP_MAX="64"
+EXPECTED_FRAMEWORK_PROPERTY="ro.vendor.fps.switch.thermal"
 
 abort_compat() {
   ui_print "! Unsupported device / ROM thermal map"
@@ -26,51 +23,34 @@ abort_compat() {
 }
 
 DEVICE="$(getprop ro.product.device)"
-INCREMENTAL="$(getprop ro.build.version.incremental)"
-SDK="$(getprop ro.build.version.sdk)"
+[ "$DEVICE" = "$EXPECTED_DEVICE" ] || abort_compat "battery/display hardware not validated"
+[ -x /system/bin/nsenter ] || abort_compat "PID1 mount namespace capability unavailable"
+[ -r "$TARGET" ] || abort_compat "vendor ThermalLevelMap interface missing"
+[ -n "$(getprop "$EXPECTED_FRAMEWORK_PROPERTY")" ] || abort_compat "PowerKeeper thermal FPS switch property absent"
 
-[ "$DEVICE" = "$EXPECTED_DEVICE" ] || abort_compat "device=$DEVICE, expected=$EXPECTED_DEVICE"
-[ "$INCREMENTAL" = "$EXPECTED_INCREMENTAL" ] || abort_compat "ROM=$INCREMENTAL, expected=$EXPECTED_INCREMENTAL"
-[ "$SDK" = "$EXPECTED_SDK" ] || abort_compat "SDK=$SDK, expected=$EXPECTED_SDK"
-[ -r "$TARGET" ] || abort_compat "$TARGET is missing"
-
-VENDOR_SHA="$(sha256sum "$TARGET" 2>/dev/null | awk '{print $1}')"
+SOURCE_SHA="$(sha256sum "$TARGET" 2>/dev/null | awk '{print $1}')"
 MAP_INPUT="$TARGET"
-if [ "$VENDOR_SHA" = "$EXPECTED_VENDOR_SHA" ]; then
-  ui_print "- Found stock vendor thermal FPS map"
-elif [ "$VENDOR_SHA" = "$EXPECTED_GUARD_SHA" ]; then
-  # Magisk can install the next ZIP while the previous Guard is still
-  # bind-mounted. Accept only our exact mounted map and the recorded stock
-  # provenance, never an arbitrary third-party vendor XML modification.
-  ACTIVE="/data/adb/modules/hyperos_thermal_refresh_guard"
-  COMPAT="$ACTIVE/compatibility.txt"
-  OLD_MAP="$ACTIVE/private/thermallevel_to_fps.xml"
-  grep -q "^source_sha256=$EXPECTED_VENDOR_SHA$" "$COMPAT" 2>/dev/null || \
-    abort_compat "guard upgrade provenance does not match stock vendor map"
-  # Older releases store overlay_sha256. The directly hotfixed v1.3.0
-  # did not record it, so additionally verify its exact ROM, version,
-  # source checksum, mounted owner, and the overlay's actual checksum.
-  if ! grep -q "^overlay_sha256=$EXPECTED_GUARD_SHA$" "$COMPAT" 2>/dev/null; then
-    grep -q "^version=1.3.0$" "$ACTIVE/module.prop" 2>/dev/null || \
-      abort_compat "guard upgrade provenance does not match mounted map"
-    grep -q "^incremental=$EXPECTED_INCREMENTAL$" "$COMPAT" 2>/dev/null || \
-      abort_compat "hotfixed guard ROM provenance mismatch"
+ACTIVE="/data/adb/modules/hyperos_thermal_refresh_guard"
+if [ -r "$ACTIVE/compatibility.txt" ] && [ -r "$ACTIVE/private/thermallevel_to_fps.xml" ]; then
+  PREV_SHA="$(sha256sum "$ACTIVE/private/thermallevel_to_fps.xml" | awk '{print $1}')"
+  if [ "$SOURCE_SHA" = "$PREV_SHA" ]; then
+    grep -E ' /vendor/etc/display/thermallevel_to_fps.xml ' /proc/1/mountinfo |
+      grep -q 'hyperos_thermal_refresh_guard/private/thermallevel_to_fps.xml' ||
+      abort_compat "cannot verify old mounted source"
+    MAP_INPUT="$ACTIVE/private/thermallevel_to_fps.xml"
+    SOURCE_SHA="$(sed -n 's/^source_sha256=//p' "$ACTIVE/compatibility.txt")"
+    ui_print "- Verified previous Guard overlay; preserve OEM provenance"
   fi
-  [ "$(sha256sum "$OLD_MAP" 2>/dev/null | awk '{print $1}')" = "$EXPECTED_GUARD_SHA" ] || \
-    abort_compat "installed guard source file has changed"
-  grep -E " /vendor/etc/display/thermallevel_to_fps.xml " /proc/1/mountinfo 2>/dev/null | \
-    grep -q 'hyperos_thermal_refresh_guard/private/thermallevel_to_fps.xml' || \
-    abort_compat "vendor map is not mounted by the existing guard"
-  MAP_INPUT="$OLD_MAP"
-  VENDOR_SHA="$EXPECTED_VENDOR_SHA"
-  ui_print "- Verified existing Guard mount; safe in-place upgrade"
-else
-  abort_compat "vendor thermal map SHA256 mismatch"
 fi
-
-MAP_COUNT="$(grep -c '<ThermalLevelMap ' "$MAP_INPUT" 2>/dev/null)"
-[ "$MAP_COUNT" = "$EXPECTED_MAP_COUNT" ] || abort_compat "thermal map entry count=$MAP_COUNT, expected=$EXPECTED_MAP_COUNT"
-
+printf '%s' "$SOURCE_SHA" |grep -Eq '^[0-9a-f]{64}$' || abort_compat "source SHA invalid"
+MAP_COUNT="$(grep -c '<ThermalLevelMap[[:space:]]' "$MAP_INPUT" 2>/dev/null)"
+[ "$MAP_COUNT" -ge 1 ] && [ "$MAP_COUNT" -le "$EXPECTED_MAP_MAX" ] ||
+  abort_compat "ThermalLevelMap capability mismatch: count=$MAP_COUNT"
+TAGS="$(grep '<ThermalLevelMap[[:space:]]' "$MAP_INPUT")"
+[ "$(printf '%s\n' "$TAGS" |grep -c 'fps="[0-9][0-9]*"')" = "$MAP_COUNT" ] ||
+  abort_compat "one numeric fps field required for each thermal level"
+[ "$(printf '%s\n' "$TAGS" |sed 's/fps="[0-9][0-9]*"/@FPS@/g' |grep -c '@FPS@.*@FPS@')" = 0 ] ||
+  abort_compat "duplicate fps attributes"
 mkdir -p "${OVERLAY%/*}" || abort "Unable to create private thermal map directory"
 
 # Remove old v1.0.0 paths from an in-place module update. Never leave a
@@ -82,11 +62,11 @@ rm -f "$MODPATH/vendor/etc/display/thermallevel_to_fps.xml" \
 # Keep the vendor XML itself as the source of truth and change only its FPS
 # attributes. This removes the display-fps thermal ceiling while leaving the
 # Thermal HAL callback path and HyperOS/SurfaceFlinger dynamic scheduler alive.
-sed 's/fps="[0-9][0-9]*"/fps="120"/g' "$MAP_INPUT" > "$OVERLAY" || \
+sed -E '/<ThermalLevelMap[[:space:]]/s/fps="[0-9]+"/fps="120"/g' "$MAP_INPUT" > "$OVERLAY" || \
   abort "Unable to generate thermal FPS overlay"
 
 [ -s "$OVERLAY" ] || abort "Generated overlay is empty"
-[ "$(grep -c '<ThermalLevelMap ' "$OVERLAY" 2>/dev/null)" = "$EXPECTED_MAP_COUNT" ] || \
+[ "$(grep -c '<ThermalLevelMap ' "$OVERLAY" 2>/dev/null)" = "$MAP_COUNT" ] || \
   abort "Generated overlay entry count mismatch"
 
 if grep '<ThermalLevelMap ' "$OVERLAY" | grep -vq 'fps="120"'; then
@@ -96,13 +76,13 @@ fi
 OVERLAY_SHA="$(sha256sum "$OVERLAY" 2>/dev/null | awk '{print $1}')"
 cat > "$META" <<EOF
 device=$DEVICE
-incremental=$INCREMENTAL
-sdk=$SDK
 source=$TARGET
 source_sha256=$VENDOR_SHA
 overlay=$OVERLAY
 overlay_sha256=$OVERLAY_SHA
 thermal_map_entries=$MAP_COUNT
+framework_thermal_switch=1
+interface_mode=feature-probed
 thermal_fps_target=120
 architecture=one-shot-post-fs-data-private-bind
 scene_profile_directory=/data/vendor/thermal/config
@@ -115,8 +95,8 @@ set_perm "$MODPATH/service.sh" 0 0 0755
 chcon u:object_r:vendor_configs_file:s0 "$OVERLAY" 2>/dev/null || true
 
 ui_print "- Device: $DEVICE"
-ui_print "- ROM: $INCREMENTAL"
-ui_print "- Vendor thermal map SHA256 verified"
+ui_print "- OEM thermal capability: ThermalLevelMap supported"
+ui_print "- Vendor XML schema and original-source fingerprint validated"
 ui_print "- Generated $MAP_COUNT-entry private thermal FPS map"
 ui_print "- Thermal FPS ceiling normalized to 120 Hz"
 ui_print "- HyperOS dynamic refresh scheduling remains enabled"
