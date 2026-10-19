@@ -12,8 +12,8 @@ OVERLAY="$MODPATH/private/thermallevel_to_fps.xml"
 META="$MODPATH/compatibility.txt"
 
 EXPECTED_DEVICE="pudding"
-EXPECTED_INCREMENTAL="OS3.0.319.0.WPCCNXM"
-EXPECTED_SDK="36"
+EXPECTED_INCREMENTAL="OS4.0.4.0.XPCCNXM"
+EXPECTED_SDK="37"
 EXPECTED_VENDOR_SHA="49c0a52abc0453d7f2345439f7e411282bab7c6a8196720d5277a12759d76d7e"
 EXPECTED_GUARD_SHA="8b036f3cbfb210ad69ac6cdca78036ff82aec8bbe99e3f862f27217169a487d8"
 EXPECTED_MAP_COUNT="13"
@@ -47,8 +47,15 @@ elif [ "$VENDOR_SHA" = "$EXPECTED_GUARD_SHA" ]; then
   OLD_MAP="$ACTIVE/private/thermallevel_to_fps.xml"
   grep -q "^source_sha256=$EXPECTED_VENDOR_SHA$" "$COMPAT" 2>/dev/null || \
     abort_compat "guard upgrade provenance does not match stock vendor map"
-  grep -q "^overlay_sha256=$EXPECTED_GUARD_SHA$" "$COMPAT" 2>/dev/null || \
-    abort_compat "guard upgrade provenance does not match mounted map"
+  # Older releases store overlay_sha256. The directly hotfixed v1.3.0
+  # did not record it, so additionally verify its exact ROM, version,
+  # source checksum, mounted owner, and the overlay's actual checksum.
+  if ! grep -q "^overlay_sha256=$EXPECTED_GUARD_SHA$" "$COMPAT" 2>/dev/null; then
+    grep -q "^version=1.3.0$" "$ACTIVE/module.prop" 2>/dev/null || \
+      abort_compat "guard upgrade provenance does not match mounted map"
+    grep -q "^incremental=$EXPECTED_INCREMENTAL$" "$COMPAT" 2>/dev/null || \
+      abort_compat "hotfixed guard ROM provenance mismatch"
+  fi
   [ "$(sha256sum "$OLD_MAP" 2>/dev/null | awk '{print $1}')" = "$EXPECTED_GUARD_SHA" ] || \
     abort_compat "installed guard source file has changed"
   grep -E " /vendor/etc/display/thermallevel_to_fps.xml " /proc/1/mountinfo 2>/dev/null | \
