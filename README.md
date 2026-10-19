@@ -2,6 +2,8 @@
 
 [中文](README.md) | [English](README_EN.md)
 
+**v1.3.0 · 2026-10-19 HyperOS 4 / Android 17 适配：** 已在 Xiaomi pudding 的 `OS4.0.4.0.XPCCNXM`（API 37）完成冷启动核验：原厂 `thermallevel_to_fps.xml` 的 SHA256 仍为 `49c0a52a…27a12759d76d7e`，运行时私有映射已挂载，`ro.vendor.fps.switch.thermal=false`、`thermal_limit_refresh_rate=0`、当前 120Hz 且未观察到旧的 60Hz framework thermal vote。安装器现在严格识别 HyperOS 4 的精确 ROM/API 与 XML 校验值；不因相同设备代号而自动允许其他版本。尚未对所有 App 或极端高温完成性能验收，**不是全局锁 120Hz**。旧 HyperOS 3 用户可使用 [v1.2.1](https://github.com/E3N-glotm/HyperOS-Thermal-Refresh-Guard/releases/tag/v1.2.1)。
+
 一个尽量窄范围的 Magisk 模块：**同时处理 QTI display-fps 映射与 PowerKeeper 写入的 framework 热限帧设置，不强制系统常驻 120 Hz，也不关闭整套温控。**
 
 **v1.2.1 启动时序修复：** 2026-09-23 真机重启后确认 v1.2.0 的 XML 映射已由 SurfaceFlinger 实际加载、`ro.vendor.fps.switch.thermal=false`、`thermal_limit_refresh_rate=0`，当时没有独立的 framework thermal 60 Hz 投票。与此同时，一次性晚启动脚本在 SettingsProvider 尚未就绪时误记了 `FAILED`。v1.2.1 将此清理动作改为仅在本次启动中限时等待设置服务，完成后立即退出；不增加常驻进程。**屏幕闲置时仍可显示 60 FPS；这不是高温限帧是否解除的充分证据。尚未人为制造高温复测。**
@@ -47,13 +49,13 @@ v1.2.0 的 `post-fs-data.sh` 和 `service.sh` 都只在开机阶段各执行一�
 
 ## 当前兼容性
 
-v1.2.0 延续 fail-closed 策略，只允许以下已验证的设备、ROM 与原始配置组合。v1.1.0 冷启动挂载已确认成功；**v1.2.0 新增的 framework 修复仍需重启后实测。**
+v1.3.0 延续 fail-closed 策略，仅对以下已验证设备、ROM、SDK 和厂商映射开放安装；该版本已完成冷启动两路径验收，但自然高温及不同 App 的行为不能据此概括。
 
 | 项目 | 值 |
 | --- | --- |
 | 设备 | Xiaomi `pudding` / 25113PN0EC |
-| 系统 | HyperOS `OS3.0.319.0.WPCCNXM` |
-| Android | 16 / API 36 |
+| 系统 | HyperOS `OS4.0.4.0.XPCCNXM` |
+| Android | 17 / API 37 |
 | 原始 thermal FPS XML SHA256 | `49c0a52abc0453d7f2345439f7e411282bab7c6a8196720d5277a12759d76d7e` |
 | ThermalLevelMap 条目 | 13 |
 
