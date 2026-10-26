@@ -1,98 +1,29 @@
-# HyperOS Thermal Refresh Guard
+# Thermal Refresh Guard · HyperOS 热控刷新率优化
 
-## v1.4.0: 按实际接口兼容 / Capability detection
+**语言：简体中文（当前） | [English](README_EN.md)**
 
-- 移除固定 HyperOS build、SDK 和硬编码原厂热控 XML SHA 白名单；安装时探测 **pudding 显示硬件**、`ThermalLevelMap` XML 与 `fps` 属性、`ro.vendor.fps.switch.thermal` 及 PID1 mount 能力。
-- 仅替换热控 XML 中 `ThermalLevelMap` 行的 `fps` 字段，不触碰其他非热控 FPS 字段。
-- 安装时保存原厂文件 SHA 和新覆盖文件 SHA；**OTA 后内容变更则开机跳过，需重装才能重新探测并生成**，不会在新系统上继续覆盖旧 XML。
-- 保留 CPU/GPU/电池和其他设备保护，不尝试通用关闭全局温控。因为操作会影响屏幕温控降刷新率策略，仍仅面向已验证的 pudding 显示硬件。
+针对特定 Xiaomi `pudding` 显示硬件的 Magisk 模块，用于处理厂商 display-fps 映射及 PowerKeeper 额外写入的 framework 热限帧设置。
 
+**当前版本：v1.4.0** · [下载 Release](https://github.com/E3N-glotm/HyperOS-Thermal-Refresh-Guard/releases) · [技术说明](docs/TECHNICAL.md)
 
-[中文](README.md) | [English](README_EN.md)
+> 本模块**不是锁定全局 120 FPS**，也不关闭 CPU/GPU/电池整体温控。屏幕静止时 60 FPS、应用主动限帧或其他原因造成的掉帧，不能直接据此判断模块未生效。
 
-**v1.3.0 · 2026-10-19 HyperOS 4 / Android 17 适配：** 已在 Xiaomi pudding 的 `OS4.0.4.0.XPCCNXM`（API 37）完成冷启动核验：原厂 `thermallevel_to_fps.xml` 的 SHA256 仍为 `49c0a52a…27a12759d76d7e`，运行时私有映射已挂载，`ro.vendor.fps.switch.thermal=false`、`thermal_limit_refresh_rate=0`、当前 120Hz 且未观察到旧的 60Hz framework thermal vote。安装器现在严格识别 HyperOS 4 的精确 ROM/API 与 XML 校验值；不因相同设备代号而自动允许其他版本。尚未对所有 App 或极端高温完成性能验收，**不是全局锁 120Hz**。旧 HyperOS 3 用户可使用 [v1.2.1](https://github.com/E3N-glotm/HyperOS-Thermal-Refresh-Guard/releases/tag/v1.2.1)。
+## 功能与原理
 
-一个尽量窄范围的 Magisk 模块：**同时处理 QTI display-fps 映射与 PowerKeeper 写入的 framework 热限帧设置，不强制系统常驻 120 Hz，也不关闭整套温控。**
+- 安装时检测原厂 `/vendor/etc/display/thermallevel_to_fps.xml` 的 `ThermalLevelMap` 元素和 `fps` 属性，并生成只改动对应热控 FPS 字段的私有覆盖文件。
+- 从 PowerKeeper / SettingsProvider 路径处理额外的 `thermal_limit_refresh_rate` 设置，尽量避免它独立强制 60 Hz。
+- 保留 SurfaceFlinger 的正常显示模式选择及 Scene、HyperCeiler 的其他刷新率策略；不锁 CPU/GPU 频率。
+- v1.4.0 不再要求固定 ROM/SDK 字符串和特定 OEM 文件哈希，转而验证 **显示设备、接口、XML 结构和挂载能力**。
+- 安装时保存原厂源文件 SHA-256；系统升级修改了 XML 内容时，开机**停止继续套用旧覆盖文件**，需要重新安装进行探测。
 
-**v1.2.1 启动时序修复：** 2026-09-23 真机重启后确认 v1.2.0 的 XML 映射已由 SurfaceFlinger 实际加载、`ro.vendor.fps.switch.thermal=false`、`thermal_limit_refresh_rate=0`，当时没有独立的 framework thermal 60 Hz 投票。与此同时，一次性晚启动脚本在 SettingsProvider 尚未就绪时误记了 `FAILED`。v1.2.1 将此清理动作改为仅在本次启动中限时等待设置服务，完成后立即退出；不增加常驻进程。**屏幕闲置时仍可显示 60 FPS；这不是高温限帧是否解除的充分证据。尚未人为制造高温复测。**
+## 适用范围
 
-**v1.2.0 的修复依据：** 2026-09-23 真机确认 v1.1.0 已在 SurfaceFlinger 中成功挂载 13 项 `fps=120`，但系统 `thermal_limit_refresh_rate` 仍曾为 `60`，显示管理器历史记录出现独立的 `PRIORITY_THERMAL_LIMIT_REFRESH_RATE` 60 Hz 投票。PowerKeeper 日志明确出现对该设置的写入。v1.2.0 新增一次性开机 PowerKeeper 设置写入门控与遗留设置清理。**其冷启动两条路径目前已核实，但自然高温下其他厂商限帧或单个 App 的上限仍需进一步核查。**
+已在 `pudding` 和相应 HyperOS 显示实现上验证。其他设备、不同显示 HAL 和极端高温场景未验证。模块保留原厂 CPU/GPU/电池热保护机制；改变显示热限帧可能提高温度和耗电。
 
-**v1.1.0 历史更正：** v1.0.0 安装器生成的 `$MODPATH/vendor/...` 文件在实际冷启动后未正确挂载。v1.1.0 改为 Magisk `post-fs-data.sh` 一次性 bind-mount 私有 XML，并在 2026-09-23 的冷启动状态中确认 SurfaceFlinger 确实看到该映射；后续高温 60 FPS 的问题来自 XML 之外的独立设置，见上文 v1.2.0 修复依据。
+## 安装、检查、回退
 
-## 设计目标
+1. 下载 [v1.4.0](https://github.com/E3N-glotm/HyperOS-Thermal-Refresh-Guard/releases/tag/v1.4.0) 或更新版本 ZIP，在 Magisk 安装并重启。
+2. 查看模块的启动状态文件及原厂热控 XML 挂载、PowerKeeper 属性和系统设置。
+3. 需要回退时禁用或卸载并**重启**，让系统恢复自己的显示热控配置。
 
-系统原有刷新率调度保持不变，例如：
-
-- 静止界面：仍可由 HyperOS 自动降到 60 Hz 或更低；
-- 触摸、滑动：仍可正常升到 120 Hz；
-- 视频、相机、应用特定策略：继续由原系统决定；
-- CPU/GPU、电池、充电、内核 thermal zone、PMIC 保护：完全不修改；
-- 处理的是 SurfaceFlinger/QTI composer 的 **display-fps thermal ceiling** 与 PowerKeeper 的 **framework 热限帧设置**。
-
-## 为什么不是“强制 120 Hz”
-
-对 `pudding / OS3.0.319.0.WPCCNXM` 的实际链路核查后，确认 QTI composer 和 PowerKeeper 的 framework 设置均可能对显示热限帧产生影响：
-
-```text
-Thermal AIDL cooling-device callback (display-fps)
-  -> SurfaceFlinger / libcomposerextn.qti.so
-  -> /vendor/etc/display/thermallevel_to_fps.xml
-  -> thermal maximum FPS
-```
-
-系统原始 XML 在较高 thermal level 会把上限降到 90/60 Hz，另一组 device-version 映射还包含 40/30 Hz。本模块安装时先严格校验原始 XML 的 SHA256，然后从**设备自己的 XML**生成 systemless 副本，仅把 13 个 `ThermalLevelMap` 的 `fps` 属性统一改成 `120`。
-
-这只是把 thermal ceiling 变为 120 Hz；Touch Boost、Smart DFPS、静止降刷、视频/相机/应用策略仍由原来的 SurfaceFlinger/HyperOS 调度，因此屏幕仍可在非 thermal 原因下降到 60 Hz 或更低。
-
-PowerKeeper 另有 `ro.vendor.fps.switch.thermal` 所门控的 `Settings.System.thermal_limit_refresh_rate` 写入路径。v1.2.0 在 `post-fs-data.sh` 阶段仅将这一个属性暂时设为 `false`，以便 PowerKeeper 初始化时读到；随后 `service.sh` 在 SettingsProvider 就绪后清除遗留的 framework 热限帧设置。两个脚本均执行一次即退出。卸载模块并重启后，`ro.vendor.fps.switch.thermal` 从原厂启动属性恢复；模块不修改应用场景或用户首选刷新率设置。
-
-此前调查过 PowerKeeper `cookie=253` 路径，但当前 ROM 的 AIDL DisplayFeature HAL 最终 FPS handler 是 no-op，真机 transaction A/B 也没有改变 120 Hz，因此正式版**不包含 PowerKeeper OAT patch，也不包含 DisplayFeature ELF patch**。
-
-## 续航与后台行为
-
-v1.2.0 的 `post-fs-data.sh` 和 `service.sh` 都只在开机阶段各执行一次，然后退出；没有常驻 shell、`logcat`、轮询或 wakelock。安装阶段生成 `private/thermallevel_to_fps.xml`，而不是放置在可能被 Scene 判定冲突的模块 `system/` 目录。
-
-这与早期 v0.1.0 原型不同；v0.1.0 使用 filtered `logcat` 捕获 thermal display 请求，仅用于验证思路，不作为正式架构保留。
-
-## 当前兼容性
-
-v1.3.0 延续 fail-closed 策略，仅对以下已验证设备、ROM、SDK 和厂商映射开放安装；该版本已完成冷启动两路径验收，但自然高温及不同 App 的行为不能据此概括。
-
-| 项目 | 值 |
-| --- | --- |
-| 设备 | Xiaomi `pudding` / 25113PN0EC |
-| 系统 | HyperOS `OS4.0.4.0.XPCCNXM` |
-| Android | 17 / API 37 |
-| 原始 thermal FPS XML SHA256 | `49c0a52abc0453d7f2345439f7e411282bab7c6a8196720d5277a12759d76d7e` |
-| ThermalLevelMap 条目 | 13 |
-
-任何一项不匹配，安装器都会直接拒绝安装；系统更新后不要强刷旧版本。
-
-## 安装
-
-1. 使用 Magisk 安装 Release 中的 ZIP；
-2. 安装器会从本机 vendor XML 生成 120 Hz thermal ceiling 的私有副本，不修改 `/vendor` 原文件；
-3. 重启手机；
-4. 重启后检查模块中的 `boot-status.txt` 是否为 `MOUNTED`、`framework-status.txt` 是否为 `READY` 或 `CLEARED`，确认 `getprop ro.vendor.fps.switch.thermal` 为 `false`、`settings get system thermal_limit_refresh_rate` 为 `0`，并确认 SurfaceFlinger 所见 XML 的 13 项映射均为 `fps="120"`。以上验证仍不代表其他应用策略或硬件温控不会请求 60 FPS。
-
-### Scene 兼容性边界
-
-Scene 的本地温控配置位于 `/data/vendor/thermal/config`。v1.2.0 不修改该目录，也不在模块 `system/` 目录放置名称含 `thermal` 的文件。**Guard 会覆盖温度触发的显示 FPS 上限，因此 Scene 配置中涉及同一显示上限的效果不会同时保留**；Scene 对 CPU/GPU 等其他温控策略的完整兼容性仍需真机 A/B 验证。
-
-## 卸载与恢复
-
-在 Magisk 中禁用或卸载模块后**重启手机**。原始 `/vendor/etc/display/thermallevel_to_fps.xml` 从未被修改；Magisk overlay 消失后自动恢复厂商映射。
-
-## 与 HyperCeiler 的关系
-
-建议关闭 HyperCeiler 中会重复修改同一领域的全局温控/刷新率 Hook，例如 `DisableThermal`、`ThermalBrightness`、`LockMaxFps`。本模块的目标正是避免“为了刷新率而关闭整套 Android 上层温控”。
-
-## 风险说明
-
-高温时允许显示系统继续使用较高刷新率会增加显示子系统功耗和发热。本模块不主动修改 CPU/GPU 降频、电池/充电保护、其它 cooling device、内核 thermal zone 或 PMIC 最终保护；但无法保证厂商其他代码不共享被修改的 PowerKeeper 属性或所有温控路径都相互独立。设备温度较高时请停止高负载测试，不要通过主动升温验收模块。
-
-## License
-
-MIT
-
+历史 v1.2/v1.3 的定版固件限制仅适用于**旧版本安装器**，不能用于解释当前 v1.4.0。历史冷启动验收文档保留在 [docs](docs/)，英文版保留详细时间线。
