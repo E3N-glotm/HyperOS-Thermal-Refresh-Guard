@@ -3,5 +3,5 @@ name=HyperOS Thermal Refresh Guard
 version=1.4.0
 versionCode=140
 author=E3N
-description=Capability-probed vendor ThermalLevelMap XML / FPS property for pudding; no ROM/SDK allowlist. Source hash pinned per install and checked at boot; OTA XML changes fail closed. Preserves thermal HAL and CPU/GPU/battery safeguards.
+description=按显示热控 XML 和 PowerKeeper 实际接口处理热限帧，不强制常驻 120Hz；系统升级修改原厂配置时拒绝继续挂载旧文件，保留 CPU/GPU/电池保护。
 
