@@ -3,8 +3,13 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 MOD="$ROOT/module"
 for f in "$MOD"/*.sh "$MOD"/bin/*.sh; do sh -n "$f"; done
-grep -q '^version=1.5.1$' "$MOD/module.prop"
+grep -q '^version=1.5.2$' "$MOD/module.prop"
 grep -q '^id=hyperos_thermal_refresh_guard$' "$MOD/module.prop"
+grep -Fq 'description=状态: 待重启 | 显示热限帧优化' "$MOD/module.prop"
+! grep -Eq '绝不|固定封顶|不允许|我说|你说' "$MOD/module.prop"
+grep -Fq '状态: 未生效 | 请点击操作查看兼容性诊断' "$MOD/service.sh"
+grep -Fq '系统限制: 已处理' "$MOD/service.sh"
+! grep -Fq 'sed -i "s|^description=' "$MOD/service.sh"
 
 # Device IDs are never gating installation/boot; interface discovery is.
 ! grep -REn 'EXPECTED_DEVICE|ro.product.device.*pudding|abort_compat|reinstall to reprobe' "$MOD"/*.sh
@@ -107,4 +112,32 @@ chmod +x "$TMP/bin/getprop"
   grep -q '^device=haotian$' "$TMP/module/compatibility.txt"
   grep -q '^framework_thermal_switch=1$' "$TMP/module/compatibility.txt"
 )
+
+# Reproduce the real incident: boot-status and Framework verification succeed,
+# but a literal '|' in the Magisk description previously broke sed -i.
+mkdir -p "$TMP/live"
+cp "$MOD/service.sh" "$TMP/live/service.sh"
+cat > "$TMP/live/module.prop" <<'EOF'
+id=hyperos_thermal_refresh_guard
+name=HyperOS Thermal Refresh Guard
+version=1.5.2
+description=状态: 待重启 | 显示热限帧优化
+EOF
+echo 'thermal_fps_target=144' > "$TMP/live/compatibility.txt"
+echo 'MOUNTED: 144Hz OEM XML map active; PowerKeeper property gated' > "$TMP/live/boot-status.txt"
+cat > "$TMP/bin/settings" <<'EOF'
+#!/bin/sh
+case "$*" in
+  'get system thermal_limit_refresh_rate') echo 0;;
+  *) exit 1;;
+esac
+EOF
+cat >> "$TMP/bin/getprop" <<'EOF'
+EOF
+# Ensure boot state is available without using a real Android daemon.
+sed -i '/ro.vendor.fps.switch.thermal)/i\  sys.boot_completed) echo 1;;' "$TMP/bin/getprop"
+chmod +x "$TMP/bin/settings" "$TMP/bin/getprop"
+PATH="$TMP/bin:$PATH" sh "$TMP/live/service.sh"
+grep -Fq 'description=状态: 已生效 | 热控映射: 144Hz | 系统限制: 已处理' "$TMP/live/module.prop"
+grep -q '^READY:' "$TMP/live/framework-status.txt"
 echo 'PASS: physical panel mode selection at 144/165/240Hz, uncapped XML, model-independent installation'

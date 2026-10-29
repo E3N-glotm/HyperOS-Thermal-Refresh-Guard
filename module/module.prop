@@ -1,7 +1,7 @@
 id=hyperos_thermal_refresh_guard
 name=HyperOS Thermal Refresh Guard
-version=1.5.1
-versionCode=151
+version=1.5.2
+versionCode=152
 author=E3N
-description=状态: 等待重启检测 | 帧率依据显示模式能力，绝不固定封顶120Hz；支持接口与OTA自动检测。
+description=状态: 待重启 | 显示热限帧优化 · 设备接口自动适配
 

@@ -2,9 +2,9 @@
 
 **简体中文 | [English](README_EN.md)**
 
-**当前版本：v1.5.1** · [下载 Release](https://github.com/E3N-glotm/HyperOS-Thermal-Refresh-Guard/releases) · [技术说明](docs/TECHNICAL.md)
+**当前版本：v1.5.2** · [下载 Release](https://github.com/E3N-glotm/HyperOS-Thermal-Refresh-Guard/releases) · [技术说明](docs/TECHNICAL.md)
 
-**v1.5.1 修正：取消人为设置的 120Hz 上限。** 优先从系统报告的面板物理显示模式读取最高刷新率，例如 120/144/165/240Hz；对于获取不到显示模式的设备，回退使用原厂 XML 热控映射中的最大值并明确标注来源。热控 XML 最大值本身不是屏幕的硬件上限，不能用来限制硬件能力。模块不会伪造硬件不支持的显示模式。
+**刷新率能力识别：** 优先从系统报告的面板物理显示模式读取最高刷新率，例如 120/144/165/240Hz；对于获取不到显示模式的设备，回退使用原厂 XML 热控映射中的最大值，并在兼容性报告中注明来源。热控映射只参与显示热限帧调整，不会生成面板不支持的显示模式。
 
 ## 跨机型兼容
 
@@ -23,7 +23,11 @@
 `/odm/etc/display/thermallevel_to_fps.xml`、
 `/product/etc/display/thermallevel_to_fps.xml`。只处理实际存在、结构通过校验、SELinux 标签可用的文件。
 
-**没有固定的 120Hz 封顶，也没有任何特定机型的刷新率白名单。** 模块修改的是显示热控映射的 FPS 数值，不是强制刷新率锁定；设备正常的动态刷新率逻辑仍由 Android/HyperOS 决定。不修改用户动态刷新率、CPU/GPU 温控、电池与充电保护、Scene 配置或内核热区。
+模块根据设备的显示模式和接口能力自动调整热控映射，不设置固定的目标刷新率；设备正常的动态刷新率逻辑仍由 Android/HyperOS 决定。不修改用户动态刷新率、CPU/GPU 温控、电池与充电保护、Scene 配置或内核热区。
+
+### 模块页面
+
+Magisk 模块描述仅展示运行状态和功能信息，例如 `状态: 已生效 | 热控映射: 144Hz | 系统限制: 已处理`。详细接口、错误原因和兼容性数据保留在模块“操作”页面。
 
 ## 兼容性证据
 
