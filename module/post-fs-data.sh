@@ -23,6 +23,22 @@ case "$mode" in
       { report 'SKIPPED: XML path/mount interface unavailable'; exit 0; }
     validate_map "$source" ||
       { report 'SKIPPED: OEM XML schema changed/unknown; stock retained'; exit 0; }
+    target=$(get_meta thermal_fps_target)
+    origin=$(get_meta target_origin)
+    case "$origin" in
+      panel)
+        # DisplayManager is not yet available at post-fs-data; use the
+        # physically supported mode verified during installation.
+        valid_target_fps "$target" ||
+          { report 'SKIPPED: stored panel peak invalid'; exit 0; }
+        ;;
+      thermal-map-fallback|*)
+        # With no verified panel mode, follow the OEM map after OTA too.
+        target="$TG_MAP_MAX_FPS"
+        ;;
+    esac
+    valid_target_fps "$target" ||
+      { report 'SKIPPED: invalid FPS target'; exit 0; }
     current_sha=$(sha "$source")
     overlay="$MODDIR/private/thermallevel_to_fps.xml"
     expected=$(get_meta source_sha256)
@@ -32,18 +48,18 @@ case "$mode" in
       # Regenerate using this boot's OEM source, never reuse the old
       # fingerprint against an OTA-updated file.
       tmp="$MODDIR/private/.thermallevel_to_fps.new"
-      generate_map "$source" "$tmp" "$TG_TARGET_FPS" ||
+      generate_map "$source" "$tmp" "$target" ||
         { rm -f "$tmp"; report 'SKIPPED: new OEM XML failed generation'; exit 0; }
       chmod 0644 "$tmp"
       apply_source_context "$source" "$tmp" ||
         { rm -f "$tmp"; report 'SKIPPED: OEM XML SELinux context unsupported'; exit 0; }
       mv -f "$tmp" "$overlay"
       overlay_sha=$(sha "$overlay")
-      sed -i "s/^source_sha256=.*/source_sha256=$current_sha/;s/^overlay_sha256=.*/overlay_sha256=$overlay_sha/;s/^thermal_map_entries=.*/thermal_map_entries=$TG_COUNT/;s/^thermal_fps_target=.*/thermal_fps_target=$TG_TARGET_FPS/" "$META"
+      sed -i "s/^source_sha256=.*/source_sha256=$current_sha/;s/^overlay_sha256=.*/overlay_sha256=$overlay_sha/;s/^thermal_map_entries=.*/thermal_map_entries=$TG_COUNT/;s/^thermal_fps_target=.*/thermal_fps_target=$target/;s/^thermal_map_max_fps=.*/thermal_map_max_fps=$TG_MAP_MAX_FPS/" "$META"
     fi
     # Always recheck the transformed content before touching PID1's mount.
     [ "$(grep -c '<ThermalLevelMap[[:space:]]' "$overlay" 2>/dev/null)" = "$TG_COUNT" ] &&
-    [ "$(grep '<ThermalLevelMap[[:space:]]' "$overlay" | grep -c "fps=\"$TG_TARGET_FPS\"")" = "$TG_COUNT" ] ||
+    [ "$(grep '<ThermalLevelMap[[:space:]]' "$overlay" | grep -c "fps=\"$target\"")" = "$TG_COUNT" ] ||
       { report 'SKIPPED: overlay failed verification'; exit 0; }
     if ! /system/bin/nsenter -t 1 -m -- /system/bin/mount --bind "$overlay" "$source"; then
       report 'FAILED: early vendor XML bind failed; stock retained'
@@ -51,7 +67,7 @@ case "$mode" in
     fi
     [ "$(sha "$source")" = "$overlay_sha" ] ||
       { /system/bin/nsenter -t 1 -m -- /system/bin/umount "$source" 2>/dev/null; report 'FAILED: bind verification mismatch'; exit 0; }
-    prefix="MOUNTED: ${TG_TARGET_FPS}Hz OEM XML map active"
+    prefix="MOUNTED: ${target}Hz OEM XML map active"
     ;;
   framework) prefix='FRAMEWORK_ONLY: vendor XML unavailable';;
   *) report 'UNSUPPORTED: no verified thermal FPS control interface; stock retained'; exit 0;;

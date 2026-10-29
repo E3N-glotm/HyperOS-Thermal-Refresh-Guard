@@ -3,7 +3,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 MOD="$ROOT/module"
 for f in "$MOD"/*.sh "$MOD"/bin/*.sh; do sh -n "$f"; done
-grep -q '^version=1.5.0$' "$MOD/module.prop"
+grep -q '^version=1.5.1$' "$MOD/module.prop"
 grep -q '^id=hyperos_thermal_refresh_guard$' "$MOD/module.prop"
 
 # Device IDs are never gating installation/boot; interface discovery is.
@@ -47,14 +47,39 @@ EOF
   . "$MOD/bin/capability.sh"
   validate_map "$TMP/xiaomi.xml"
   [ "$TG_COUNT" -eq 4 ]
-  [ "$TG_TARGET_FPS" -eq 120 ]
+  [ "$TG_MAP_MAX_FPS" -eq 144 ]
+  [ "$TG_TARGET_FPS" -eq 144 ]
   generate_map "$TMP/xiaomi.xml" "$TMP/new.xml" "$TG_TARGET_FPS"
-  [ "$(grep -c 'ThermalLevelMap.*fps="120"' "$TMP/new.xml")" -eq 4 ]
+  [ "$(grep -c 'ThermalLevelMap.*fps="144"' "$TMP/new.xml")" -eq 4 ]
   grep -q 'Other fps="144" key="keep-me"' "$TMP/new.xml"
   validate_map "$TMP/90hz.xml"
   [ "$TG_TARGET_FPS" -eq 90 ]
   ! validate_map "$TMP/invalid.xml"
   ! validate_map "$TMP/no-schema.xml"
+)
+
+# Mode inventory, not XML stages or the 360Hz panel VSYNC, is authoritative.
+cat > "$TMP/display" <<'EOF'
+  mSfDisplayModes=
+    DisplayMode{id=0, peakRefreshRate=144.00001, vsyncRate=360.0001}
+    DisplayMode{id=1, peakRefreshRate=90.0, vsyncRate=90.0}
+  mActiveSfDisplayMode=DisplayMode{id=0, peakRefreshRate=144.00001}
+EOF
+cat > "$TMP/bin_display" <<'EOF'
+#!/bin/sh
+cat "$TEST_DISPLAY"
+EOF
+mkdir -p "$TMP/bin"
+cp "$TMP/bin_display" "$TMP/bin/dumpsys"
+chmod +x "$TMP/bin/dumpsys"
+(
+  export TEST_DISPLAY="$TMP/display" PATH="$TMP/bin:$PATH"
+  . "$MOD/bin/capability.sh"
+  [ "$(detect_panel_max_fps)" = 144 ]
+  sed -i 's/144.00001/165.0/g' "$TMP/display"
+  [ "$(detect_panel_max_fps)" = 165 ]
+  sed -i 's/165.0/240.0/g' "$TMP/display"
+  [ "$(detect_panel_max_fps)" = 240 ]
 )
 
 # Test the installer with a fake device ID and no vendor display XML:
@@ -72,7 +97,7 @@ esac
 EOF
 chmod +x "$TMP/bin/getprop"
 (
-  export PATH="$TMP/bin:$PATH"
+  export PATH="$TMP/bin:$PATH" TEST_DISPLAY="$TMP/display"
   export MODPATH="$TMP/module"
   set_perm() { :; }
   set_perm_recursive() { :; }
@@ -82,4 +107,4 @@ chmod +x "$TMP/bin/getprop"
   grep -q '^device=haotian$' "$TMP/module/compatibility.txt"
   grep -q '^framework_thermal_switch=1$' "$TMP/module/compatibility.txt"
 )
-echo 'PASS: cross-device capabilities, model-independent install, XML-only transformation'
+echo 'PASS: physical panel mode selection at 144/165/240Hz, uncapped XML, model-independent installation'

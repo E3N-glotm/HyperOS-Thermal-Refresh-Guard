@@ -6,6 +6,7 @@ valid_sha() {
 }
 validate_map() {
   TG_COUNT=0
+  TG_MAP_MAX_FPS=0
   TG_TARGET_FPS=0
   file="$1"
   [ -r "$file" ] && [ -s "$file" ] || return 1
@@ -18,14 +19,38 @@ validate_map() {
   [ "$(printf '%s\n' "$tags" | grep -Eo 'fps="[0-9]+"' | wc -l)" = "$TG_COUNT" ] || return 1
   top=$(printf '%s\n' "$tags" | sed -n 's/.*fps="\([0-9][0-9]*\)".*/\1/p' | sort -nr | head -n 1)
   case "$top" in ''|*[!0-9]*) return 1;; esac
-  [ "$top" -ge 60 ] && [ "$top" -le 240 ] || return 1
-  # Avoid requesting a mode higher than the OEM map ever mentions.
-  if [ "$top" -ge 120 ]; then TG_TARGET_FPS=120; else TG_TARGET_FPS=$top; fi
+  # This upper bound validates absurd/malformed XML, it is NOT a 120/144 Hz
+  # device capability ceiling. The actual target is resolved separately.
+  [ "$top" -ge 30 ] && [ "$top" -le 1000 ] || return 1
+  TG_MAP_MAX_FPS=$top
+  TG_TARGET_FPS=$top
   return 0
+}
+detect_panel_max_fps() {
+  # The vendor thermal map describes throttling stages, not the physical
+  # panel's supported modes. Prefer the OS display-mode inventory.
+  # mSfDisplayModes enumerates physical modes; never take vsyncRate (which
+  # may reach 360Hz with a 120Hz panel) or touch-sampling frequencies.
+  dumpsys display 2>/dev/null | awk '
+    /mSfDisplayModes=/ { in_modes=1; next }
+    in_modes && /mActiveSfDisplayMode=/ { exit }
+    in_modes && /DisplayMode\{/ {
+      if (match($0,/peakRefreshRate=[0-9.]+/)) {
+        x=substr($0,RSTART+16,RLENGTH-16)+0
+        if (x>max) max=x
+      }
+    }
+    END { if (max>=30 && max<=1000) printf "%.0f\n",max }
+  '
+}
+valid_target_fps() {
+  case "$1" in ''|*[!0-9]*) return 1;; esac
+  [ "$1" -ge 30 ] && [ "$1" -le 1000 ]
 }
 generate_map() {
   input=$1 output=$2 fps=$3
   [ -n "$output" ] && [ "$input" != "$output" ] || return 1
+  valid_target_fps "$fps" || return 1
   validate_map "$input" || return 1
   sed -E '/<ThermalLevelMap[[:space:]]/s/fps="[0-9]+"/fps="'$fps'"/' "$input" > "$output" || return 1
   [ -s "$output" ] &&

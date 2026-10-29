@@ -43,7 +43,7 @@ jobs:
           fi
           checksum="$(sha256sum "$zip" | awk '{print $1}')"
           {
-            echo "v1.5.0 cross-device capability detection: no device/ROM allowlist. Installs without rejecting missing interfaces; incompatible devices report unsupported/partial in Magisk."
+            echo "Cross-device capability detection: no device/ROM allowlist. Uncapped refresh target follows physical display modes when available (including 144/165/240Hz), otherwise vendor map fallback is clearly identified."
             echo
             echo "Existing pudding baseline validated the vendor thermal map and PowerKeeper route. Xiaomi 15 Pro (haotian) installation has only been simulated; no actual haotian ROM/thermal outcome claim."
             echo

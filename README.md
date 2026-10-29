@@ -2,7 +2,9 @@
 
 **简体中文 | [English](README_EN.md)**
 
-**当前版本：v1.5.0** · [下载 Release](https://github.com/E3N-glotm/HyperOS-Thermal-Refresh-Guard/releases) · [技术说明](docs/TECHNICAL.md)
+**当前版本：v1.5.1** · [下载 Release](https://github.com/E3N-glotm/HyperOS-Thermal-Refresh-Guard/releases) · [技术说明](docs/TECHNICAL.md)
+
+**v1.5.1 修正：取消人为设置的 120Hz 上限。** 优先从系统报告的面板物理显示模式读取最高刷新率，例如 120/144/165/240Hz；对于获取不到显示模式的设备，回退使用原厂 XML 热控映射中的最大值并明确标注来源。热控 XML 最大值本身不是屏幕的硬件上限，不能用来限制硬件能力。模块不会伪造硬件不支持的显示模式。
 
 ## 跨机型兼容
 
@@ -21,7 +23,7 @@
 `/odm/etc/display/thermallevel_to_fps.xml`、
 `/product/etc/display/thermallevel_to_fps.xml`。只处理实际存在、结构通过校验、SELinux 标签可用的文件。
 
-热控目标 FPS 最多取 `120`，若原厂热控表最大值不足 120，则不超过原厂最大值；**不会强制屏幕持续 120Hz**。不修改用户动态刷新率、CPU/GPU 温控、电池与充电保护、Scene 配置或内核热区。
+**没有固定的 120Hz 封顶，也没有任何特定机型的刷新率白名单。** 模块修改的是显示热控映射的 FPS 数值，不是强制刷新率锁定；设备正常的动态刷新率逻辑仍由 Android/HyperOS 决定。不修改用户动态刷新率、CPU/GPU 温控、电池与充电保护、Scene 配置或内核热区。
 
 ## 兼容性证据
 

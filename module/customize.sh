@@ -13,6 +13,9 @@ source_sha=
 overlay_sha=
 entry_count=0
 target_fps=0
+panel_max_fps=$(detect_panel_max_fps)
+target_origin=none
+thermal_map_max=0
 framework=0
 reason='No verified display thermal FPS interface'
 
@@ -43,12 +46,20 @@ for candidate in /vendor/etc/display/thermallevel_to_fps.xml \
     source_path="$candidate"
     source_sha="${original_sha:-$(sha256sum "$current" | cut -d' ' -f1)}"
     entry_count="$TG_COUNT"
-    target_fps="$TG_TARGET_FPS"
-    if generate_map "$current" "$MODDIR/private/thermallevel_to_fps.xml" "$TG_TARGET_FPS" &&
+    thermal_map_max="$TG_MAP_MAX_FPS"
+    if valid_target_fps "$panel_max_fps"; then
+      target_fps="$panel_max_fps"
+      target_origin=panel
+    else
+      # Explicit fallback: do not pretend the thermal map proves panel Hz.
+      target_fps="$TG_MAP_MAX_FPS"
+      target_origin=thermal-map-fallback
+    fi
+    if generate_map "$current" "$MODDIR/private/thermallevel_to_fps.xml" "$target_fps" &&
        apply_source_context "$current" "$MODDIR/private/thermallevel_to_fps.xml"; then
       overlay_sha=$(sha256sum "$MODDIR/private/thermallevel_to_fps.xml" | cut -d' ' -f1)
       mode=xml
-      reason='Verified ThermalLevelMap schema'
+      reason="Verified ThermalLevelMap schema; target from $target_origin"
       break
     else
       reason='Thermal map generation/SELinux labeling unsupported'
@@ -75,6 +86,9 @@ source_sha256=$source_sha
 overlay_sha256=$overlay_sha
 thermal_map_entries=$entry_count
 thermal_fps_target=$target_fps
+thermal_map_max_fps=$thermal_map_max
+panel_max_fps=$panel_max_fps
+target_origin=$target_origin
 framework_thermal_switch=$framework
 reason=$reason
 EOF
@@ -92,7 +106,8 @@ set_perm "$MODDIR/action.sh" 0 0 0755
 echo "INSTALLED: mode=$mode; $reason" > "$STATUS"
 ui_print "- Device: $(getprop ro.product.device); capability mode: $mode"
 ui_print "- $reason"
-ui_print "- Thermal XML target: ${target_fps}Hz; entries: $entry_count"
+ui_print "- Detected panel peak: ${panel_max_fps:-unknown}Hz; OEM thermal-map maximum: ${thermal_map_max}Hz"
+ui_print "- Thermal XML target: ${target_fps}Hz ($target_origin); entries: $entry_count"
 ui_print "- Interface missing = installed diagnostics, not installation failure"
 ui_print "- CPU/GPU, battery and charging thermal protections untouched"
 ui_print "- The module rechecks vendor XML after every reboot/OTA"
