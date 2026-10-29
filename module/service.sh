@@ -1,42 +1,50 @@
 #!/system/bin/sh
-
-# One-shot Magisk late-start service; no daemon, polling or background watch.
-# The framework may retain a thermal FPS cap from the previous boot. Clear it
-# after SettingsProvider becomes available, but never force peak/min FPS.
-MODDIR="${0%/*}"
+# One-shot late boot. Do not start polling or override app/idle FPS policies.
+MODDIR=${0%/*}
 STATUS="$MODDIR/boot-status.txt"
 RESULT="$MODDIR/framework-status.txt"
-if [ "$(getprop ro.product.device)" != pudding ] ||
-   [ "$(getprop ro.vendor.fps.switch.thermal)" != false ] ||
-   ! grep -q '^MOUNTED:' "$STATUS" 2>/dev/null; then
-  printf '%s\n' 'SKIPPED: early boot verification/property gate was not successful' > "$RESULT"
-  exit 0
-fi
-
-# On this ROM Magisk late_start service can run before SettingsProvider has
-# finished publishing its System table. v1.2.0 wrote a false FAILED status at
-# that point even though the key later became 0. Wait only during this single
-# boot invocation (maximum 40 seconds), then exit; never leave a watcher.
+PROP="$MODDIR/module.prop"
+mode=$(sed -n 's/^mode=//p' "$MODDIR/compatibility.txt" | head -n 1)
+refresh_ui() {
+  value=$1
+  sed -i "s|^description=.*|description=$value|" "$PROP" 2>/dev/null || true
+}
+boot=$(cat "$STATUS" 2>/dev/null)
+case "$boot" in
+  MOUNTED:*) level='已生效';;
+  FRAMEWORK_ONLY:*) level='部分支持';;
+  *) printf '%s\n' "${boot:-UNSUPPORTED: no interface}" > "$RESULT"
+     refresh_ui "状态: 未找到可验证接口或未生效 | ${boot:-请点击操作查看诊断}"
+     exit 0;;
+esac
+case "$boot" in
+  *'PowerKeeper property gated'*) ;;
+  *) echo 'PARTIAL: XML supported, framework thermal property unavailable' > "$RESULT"
+     refresh_ui "状态: $level (仅 XML) | $boot"; exit 0 ;;
+esac
 attempt=0
 while [ "$attempt" -lt 20 ]; do
-  attempt=$((attempt + 1))
+  attempt=$((attempt+1))
   if [ "$(getprop sys.boot_completed)" = 1 ]; then
-    OLD="$(settings get system thermal_limit_refresh_rate 2>/dev/null)"
-    if [ "$OLD" = 0 ]; then
-      printf '%s\n' 'READY: framework thermal FPS cap is zero' > "$RESULT"
-      exit 0
-    fi
-    if [ "$OLD" = null ] && settings list system >/dev/null 2>&1; then
-      printf '%s\n' 'READY: no framework thermal FPS cap is set' > "$RESULT"
-      exit 0
-    fi
-    if settings put system thermal_limit_refresh_rate 0 2>/dev/null &&
-       [ "$(settings get system thermal_limit_refresh_rate 2>/dev/null)" = 0 ]; then
-      printf '%s\n' 'CLEARED: framework thermal FPS cap reset to zero' > "$RESULT"
-      exit 0
-    fi
+    cur=$(settings get system thermal_limit_refresh_rate 2>&1)
+    case "$cur" in
+      0|null)
+        echo 'READY: framework thermal FPS cap cleared/unset' > "$RESULT"
+        refresh_ui "状态: $level | 显示热限帧与 PowerKeeper 控制已处理"
+        exit 0;;
+      ''|*'Failure'*|*'Exception'*|*'transaction'*) ;;
+      *)
+        case "$cur" in *[!0-9]*) ;; *)
+          if settings put system thermal_limit_refresh_rate 0 >/dev/null 2>&1 &&
+             [ "$(settings get system thermal_limit_refresh_rate 2>/dev/null)" = 0 ]; then
+            echo 'CLEARED: framework thermal FPS cap reset to zero' > "$RESULT"
+            refresh_ui "状态: $level | 显示热限帧与 PowerKeeper 控制已处理"
+            exit 0
+          fi;; esac;;
+    esac
   fi
   sleep 2
 done
-printf '%s\n' 'FAILED: SettingsProvider was not ready or framework cap could not be cleared within 40 seconds' > "$RESULT"
+echo 'PARTIAL: SettingsProvider not ready or FPS cap not cleared' > "$RESULT"
+refresh_ui "状态: 部分支持 | 显示接口处理成功，但 Framework 设置未确认"
 exit 0

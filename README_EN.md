@@ -1,93 +1,30 @@
 # HyperOS Thermal Refresh Guard
 
-**Language: [简体中文](README.md) | English (current)**
+**[简体中文](README.md) | English**
 
-**Current version: v1.4.0.** The installer probes `pudding` display hardware, OEM `ThermalLevelMap`/`fps` XML, the PowerKeeper property and mount support. It does not gate on a fixed ROM/SDK or hardcoded OEM XML checksum; installation pins the current OEM source fingerprint and skips an outdated overlay after an OTA until reinstallation. Previous v1.3.0 strict gates mentioned below are historical only.
+**v1.5.0** is an experimental cross-device, feature-probed Xiaomi thermal *display refresh ceiling* guard. Prior releases were hard-blocked to device code `pudding`, so Xiaomi 15 Pro (`haotian`) could not install even when a compatible display interface might be available.
 
+The installer now **always completes** and reports one of the following capabilities, rather than treating a different device model as a fatal error:
 
-**v1.3.0 (2026-10-19) — HyperOS 4 / Android 17 compatibility.** Verified on Xiaomi pudding, `OS4.0.4.0.XPCCNXM` (API 37): the OEM vendor thermal XML retains its known SHA256, the private 13-entry display-FPS map mounted successfully at cold boot, the PowerKeeper thermal FPS setting gate was applied, and no old framework 60-Hz thermal vote was seen. The installer now gates the exact ROM/API/vendor checksum. This is **not** a blanket 120-FPS lock and does not establish results for every app or high-temperature condition. HyperOS 3 users should remain on [v1.2.1](https://github.com/E3N-glotm/HyperOS-Thermal-Refresh-Guard/releases/tag/v1.2.1).
+| Interface detected | Behavior |
+|---|---|
+| Valid display `ThermalLevelMap` XML | Generate a privately stored map changing only the matching `fps` attributes; verify and bind-mount at early boot |
+| XML plus PowerKeeper thermal FPS property | Also handle the independent Framework `thermal_limit_refresh_rate` cap |
+| Only the PowerKeeper property | Partial support; no vendor XML patch |
+| Neither interface | Diagnostic-only, original vendor thermal behavior preserved |
+| OEM XML changes after OTA | Revalidate and regenerate from the newly booted OEM XML; unknown schemas fail closed without mounting |
 
+Candidate XML paths: `/vendor/etc/display/thermallevel_to_fps.xml`, `/odm/etc/display/thermallevel_to_fps.xml`, and `/product/etc/display/thermallevel_to_fps.xml`. Candidate paths alone are not proof that a device uses them. Each must pass schema and SELinux checks.
 
-A narrowly scoped Magisk module targeting both the QTI display-fps thermal ceiling and PowerKeeper's independent framework thermal FPS setting, without forcing constant 120 Hz or disabling the entire thermal stack.
+Target values are capped at 120 FPS and never higher than the maximum found in the OEM mapping; normal LTPO/idle, video, app and game-refresh policies remain unchanged. CPU/GPU, battery, charging, kernel thermal zones and Scene thermal profiles are not disabled or patched.
 
-**v1.2.1 boot-timing correction:** After the 2026-09-23 cold boot, SurfaceFlinger was verified to load v1.2.0's 13-entry XML; `ro.vendor.fps.switch.thermal=false`, `thermal_limit_refresh_rate=0`, and no separate 60-Hz framework thermal vote was present. However, the one-shot late script incorrectly logged `FAILED` before SettingsProvider became ready. v1.2.1 waits for the service for a bounded interval during boot only, then exits; it adds no resident watcher. Idle 60 FPS can still be normal. No deliberate high-temperature stress test has been performed.
+### Verification status
 
-**v1.2.0 finding:** On September 23 the v1.1.0 XML overlay was confirmed active in SurfaceFlinger (all 13 FPS targets set to 120), but the phone still temporarily reported `Settings.System.thermal_limit_refresh_rate=60` and the display director's history contained an independent 60-Hz `PRIORITY_THERMAL_LIMIT_REFRESH_RATE` vote. PowerKeeper log messages confirmed it modifies the setting. v1.2.0 adds an early-boot gate for that setting and one-shot cleanup of the prior value. A subsequent cold boot verified both targeted controls; naturally recurring high-temperature app/vendor limits remain unverified.
+- **pudding:** previously validated real QTI XML and PowerKeeper behavior; v1.5.0 cold-boot tests still needed.
+- **haotian (Xiaomi 15 Pro):** reported v1.4 installation failure was caused by the device whitelist. The new installer passes a simulated `haotian` model test, but its actual vendor XML and high-temperature behavior have **not** been verified.
+- **SM8550 family / garnet / marble:** open device trees advertise related vendor display files; no production behavior claim.
+- **Other Xiaomi/Redmi/POCO:** diagnostics only until actual interfaces have been proven.
 
-**Historical v1.1.0 correction:** The v1.0.0 `$MODPATH/vendor/...` file did not appear at the actual `/vendor` path after cold boot. The v1.1.0 private-file bind mount was confirmed in SurfaceFlinger's own view on September 23; the remaining 60-FPS thermal behavior was traced to an independent framework setting rather than an absent XML mount. Full Scene profile compatibility is still unverified.
+Install the ZIP via Magisk, KernelSU or compatible SterSU, reboot, then use Magisk's module Action to inspect live and saved statuses. An installed module is **not** necessarily an active module. Disable or uninstall and reboot to restore stock bind mounts. This module has no resident daemon or polling process; removing a thermal FPS ceiling may increase heat and battery usage during sustained load.
 
-## Goal
-
-Keep HyperOS' normal dynamic refresh scheduler intact:
-
-- static UI may still drop to 60 Hz or lower;
-- touch and scrolling may still boost to 120 Hz;
-- video, camera and per-app policies remain stock-controlled;
-- CPU/GPU, battery, charging, kernel thermal zones and PMIC protection are untouched;
-- the targeted thermal refresh inputs are the SurfaceFlinger/QTI display-fps ceiling and PowerKeeper's framework thermal refresh-rate setting.
-
-## Implementation
-
-One of two observed thermal-refresh paths on `pudding / OS4.0.4.0.XPCCNXM` is:
-
-```text
-Thermal AIDL cooling-device callback (display-fps)
-  -> SurfaceFlinger / libcomposerextn.qti.so
-  -> /vendor/etc/display/thermallevel_to_fps.xml
-  -> thermal maximum FPS
-```
-
-The stock map reduces the thermal ceiling to 90/60 Hz at higher levels; a second device-version map also contains 40/30 Hz. During installation the module fail-closes on the exact stock XML SHA256, copies the device's own XML into the Magisk module tree, and changes only the 13 `ThermalLevelMap` `fps` attributes to `120`.
-
-That raises only the thermal ceiling. Touch boost, Smart DFPS, static-content downshift, video/camera behavior and per-app policies remain under the stock SurfaceFlinger/HyperOS scheduler, so non-thermal logic may still select 60 Hz or lower.
-
-Separately, PowerKeeper uses `ro.vendor.fps.switch.thermal` to gate writes to `Settings.System.thermal_limit_refresh_rate`. The early `post-fs-data.sh` sets only that property to `false` before PowerKeeper initializes; `service.sh` runs once when SettingsProvider is ready and resets a leftover thermal limit to zero. Neither script changes `peak_refresh_rate`, `min_refresh_rate`, or Scene's `/data/vendor/thermal/config` profiles. The property override is runtime-only and returns to the stock boot value after disabling/uninstalling the module and rebooting.
-
-The PowerKeeper `cookie=253` path was also investigated. On this ROM its AIDL DisplayFeature FPS handler resolves to a no-op, and direct transaction A/B did not change the 120 Hz display state. The release therefore contains **no PowerKeeper OAT patch and no DisplayFeature ELF patch**.
-
-## Battery / background overhead
-
-v1.2.0 runs **two short-lived one-shot scripts** (`post-fs-data.sh` and `service.sh`) during boot, then exits. There is no resident shell, `logcat` listener, polling loop or wakelock. The source file is under the module's `private/` directory, not `system/` or `vendor/`.
-
-The earlier v0.1.0 proof-of-concept used a filtered `logcat` listener. That architecture is intentionally not used in the formal release.
-
-## Compatibility
-
-v1.2.0 is fail-closed and currently supports only the tested ROM baseline. The v1.1.0 cold-boot XML mount was confirmed; **the v1.2.0 framework-setting change still requires a reboot test**:
-
-| Item | Value |
-| --- | --- |
-| Device | Xiaomi `pudding` / 25113PN0EC |
-| ROM | HyperOS `OS4.0.4.0.XPCCNXM` |
-| Android | 16 / API 37 |
-| Stock thermal FPS XML SHA256 | `49c0a52abc0453d7f2345439f7e411282bab7c6a8196720d5277a12759d76d7e` |
-| ThermalLevelMap entries | 13 |
-
-The installer aborts on any mismatch. Do not force-install this build after an OTA.
-
-## Install
-
-1. Install the ZIP from GitHub Releases in Magisk.
-2. The installer generates a private 120 Hz thermal-ceiling XML from the device's own vendor file.
-3. Reboot.
-4. After reboot, confirm `boot-status.txt` reports `MOUNTED`, `framework-status.txt` reports `READY` or `CLEARED`, `getprop ro.vendor.fps.switch.thermal` is `false`, `settings get system thermal_limit_refresh_rate` is `0`, and SurfaceFlinger's actual view of the vendor XML contains 13 entries of `fps="120"`. These conditions do not rule out independent app or hardware FPS limits.
-
-## Scene compatibility
-
-Scene switches its thermal profiles under `/data/vendor/thermal/config`. This module does not modify that directory and deliberately has no `system/*thermal*` file which would trigger Scene's current "another module modifies thermal files" check. However, it overrides thermal display FPS limits, so any Scene profile's display-FPS mitigation cannot remain intact at the same time. Other Scene profile changes require on-device A/B; full Scene compatibility is not established.
-
-## Uninstall / restore
-
-Disable or uninstall the module in Magisk and **reboot**. The stock vendor XML is never modified; removing the Magisk overlay restores the OEM map automatically.
-
-## HyperCeiler
-
-It is recommended to disable overlapping global thermal/refresh hooks such as `DisableThermal`, `ThermalBrightness` and `LockMaxFps`. This module deliberately avoids disabling the full Android thermal framework just to preserve refresh rate.
-
-## Safety note
-
-Allowing higher refresh rates at elevated temperatures can increase display power and heat. This module does not intentionally change CPU/GPU throttling, battery/charging protection, other cooling devices, kernel thermal zones or PMIC safeguards. We cannot guarantee that no other vendor component shares the overridden PowerKeeper property or that all thermal subsystems are independent. Avoid deliberately heating the device for validation; disable the module and reboot if the device overheats.
-
-## License
-
-MIT
+For technical history, see [docs/TECHNICAL.md](docs/TECHNICAL.md). Issues should include device model, OS version and redacted compatibility/boot/framework status files.

@@ -1,105 +1,99 @@
 #!/system/bin/sh
+# Cross-device capability probing. Installation must not fail because one
+# OEM interface or model code is absent. Never edit kernel/thermal protection.
+MODDIR="$MODPATH"
+. "$MODDIR/bin/capability.sh"
+META="$MODDIR/compatibility.txt"
+STATUS="$MODDIR/install-status.txt"
+mkdir -p "$MODDIR/private"
 
-# HyperOS Thermal Refresh Guard
-#
-# Installation probes the vendor thermal XML interface and its source fingerprint and generates a private
-# replacement. A one-shot post-fs-data hook mounts it before SurfaceFlinger
-# starts, then exits. No resident process and no system/thermal* module file
-# that would trigger Scene's thermal-file collision checker.
+mode=none
+source_path=
+source_sha=
+overlay_sha=
+entry_count=0
+target_fps=0
+framework=0
+reason='No verified display thermal FPS interface'
 
-TARGET="/vendor/etc/display/thermallevel_to_fps.xml"
-OVERLAY="$MODPATH/private/thermallevel_to_fps.xml"
-META="$MODPATH/compatibility.txt"
-
-EXPECTED_DEVICE="pudding"
-EXPECTED_MAP_MAX="64"
-EXPECTED_FRAMEWORK_PROPERTY="ro.vendor.fps.switch.thermal"
-
-abort_compat() {
-  ui_print "! Unsupported vendor display/thermal interface"
-  ui_print "! $1"
-  ui_print "! No systemless override was generated"
-  abort "$1"
-}
-
-DEVICE="$(getprop ro.product.device)"
-[ "$DEVICE" = "$EXPECTED_DEVICE" ] || abort_compat "battery/display hardware not validated"
-[ -x /system/bin/nsenter ] || abort_compat "PID1 mount namespace capability unavailable"
-[ -r "$TARGET" ] || abort_compat "vendor ThermalLevelMap interface missing"
-[ -n "$(getprop "$EXPECTED_FRAMEWORK_PROPERTY")" ] || abort_compat "PowerKeeper thermal FPS switch property absent"
-
-SOURCE_SHA="$(sha256sum "$TARGET" 2>/dev/null | awk '{print $1}')"
-MAP_INPUT="$TARGET"
-ACTIVE="/data/adb/modules/hyperos_thermal_refresh_guard"
-if [ -r "$ACTIVE/compatibility.txt" ] && [ -r "$ACTIVE/private/thermallevel_to_fps.xml" ]; then
-  PREV_SHA="$(sha256sum "$ACTIVE/private/thermallevel_to_fps.xml" | awk '{print $1}')"
-  if [ "$SOURCE_SHA" = "$PREV_SHA" ]; then
-    grep -E ' /vendor/etc/display/thermallevel_to_fps.xml ' /proc/1/mountinfo |
-      grep -q 'hyperos_thermal_refresh_guard/private/thermallevel_to_fps.xml' ||
-      abort_compat "cannot verify old mounted source"
-    MAP_INPUT="$ACTIVE/private/thermallevel_to_fps.xml"
-    SOURCE_SHA="$(sed -n 's/^source_sha256=//p' "$ACTIVE/compatibility.txt")"
-    ui_print "- Verified previous Guard overlay; preserve OEM provenance"
+# Prefer the real mounted vendor/odm interface, not a codename allowlist.
+for candidate in /vendor/etc/display/thermallevel_to_fps.xml \
+                 /odm/etc/display/thermallevel_to_fps.xml \
+                 /product/etc/display/thermallevel_to_fps.xml; do
+  [ -r "$candidate" ] || continue
+  current="$candidate"
+  # During an update, the pathname may be the previous *mounted* overlay.
+  # Its original provenance must be taken from the previous module metadata.
+  ACTIVE=/data/adb/modules/hyperos_thermal_refresh_guard
+  original_sha=
+  if [ -r "$ACTIVE/compatibility.txt" ] &&
+     [ -r "$ACTIVE/private/thermallevel_to_fps.xml" ] &&
+     grep -Fq " $candidate " /proc/1/mountinfo 2>/dev/null; then
+    old_overlay_sha=$(sha256sum "$ACTIVE/private/thermallevel_to_fps.xml" | cut -d' ' -f1)
+    current_sha=$(sha256sum "$candidate" | cut -d' ' -f1)
+    if [ "$current_sha" = "$old_overlay_sha" ]; then
+      old_source=$(sed -n 's/^source=//p' "$ACTIVE/compatibility.txt")
+      old_stock_sha=$(sed -n 's/^source_sha256=//p' "$ACTIVE/compatibility.txt")
+      if [ "$old_source" = "$candidate" ] && valid_sha "$old_stock_sha"; then
+        original_sha="$old_stock_sha"
+      fi
+    fi
   fi
-fi
-printf '%s' "$SOURCE_SHA" |grep -Eq '^[0-9a-f]{64}$' || abort_compat "source SHA invalid"
-MAP_COUNT="$(grep -c '<ThermalLevelMap[[:space:]]' "$MAP_INPUT" 2>/dev/null)"
-[ "$MAP_COUNT" -ge 1 ] && [ "$MAP_COUNT" -le "$EXPECTED_MAP_MAX" ] ||
-  abort_compat "ThermalLevelMap capability mismatch: count=$MAP_COUNT"
-TAGS="$(grep '<ThermalLevelMap[[:space:]]' "$MAP_INPUT")"
-[ "$(printf '%s\n' "$TAGS" |grep -c 'fps="[0-9][0-9]*"')" = "$MAP_COUNT" ] ||
-  abort_compat "one numeric fps field required for each thermal level"
-[ "$(printf '%s\n' "$TAGS" |sed 's/fps="[0-9][0-9]*"/@FPS@/g' |grep -c '@FPS@.*@FPS@')" = 0 ] ||
-  abort_compat "duplicate fps attributes"
-mkdir -p "${OVERLAY%/*}" || abort "Unable to create private thermal map directory"
+  if validate_map "$current"; then
+    source_path="$candidate"
+    source_sha="${original_sha:-$(sha256sum "$current" | cut -d' ' -f1)}"
+    entry_count="$TG_COUNT"
+    target_fps="$TG_TARGET_FPS"
+    if generate_map "$current" "$MODDIR/private/thermallevel_to_fps.xml" "$TG_TARGET_FPS" &&
+       apply_source_context "$current" "$MODDIR/private/thermallevel_to_fps.xml"; then
+      overlay_sha=$(sha256sum "$MODDIR/private/thermallevel_to_fps.xml" | cut -d' ' -f1)
+      mode=xml
+      reason='Verified ThermalLevelMap schema'
+      break
+    else
+      reason='Thermal map generation/SELinux labeling unsupported'
+    fi
+  fi
+done
 
-# Remove old v1.0.0 paths from an in-place module update. Never leave a
-# system/vendor thermal file that Scene would interpret as a competing
-# replacement of its /data/vendor/thermal/config profiles.
-rm -f "$MODPATH/vendor/etc/display/thermallevel_to_fps.xml" \
-      "$MODPATH/system/vendor/etc/display/thermallevel_to_fps.xml"
-
-# Keep the vendor XML itself as the source of truth and change only its FPS
-# attributes. This removes the display-fps thermal ceiling while leaving the
-# Thermal HAL callback path and HyperOS/SurfaceFlinger dynamic scheduler alive.
-sed -E '/<ThermalLevelMap[[:space:]]/s/fps="[0-9]+"/fps="120"/g' "$MAP_INPUT" > "$OVERLAY" || \
-  abort "Unable to generate thermal FPS overlay"
-
-[ -s "$OVERLAY" ] || abort "Generated overlay is empty"
-[ "$(grep -c '<ThermalLevelMap[[:space:]]' "$OVERLAY" 2>/dev/null)" = "$MAP_COUNT" ] || \
-  abort "Generated overlay entry count mismatch"
-
-if grep '<ThermalLevelMap[[:space:]]' "$OVERLAY" | grep -vq 'fps="120"'; then
-  abort "Generated overlay contains a non-120 thermal FPS target"
+if [ -n "$(getprop ro.vendor.fps.switch.thermal)" ]; then
+  # A writable PowerKeeper thermal vote is optional and independent of XML.
+  framework=1
+  [ "$mode" != none ] || { mode=framework; reason='Framework FPS switch detected; vendor XML unavailable'; }
 fi
 
-OVERLAY_SHA="$(sha256sum "$OVERLAY" 2>/dev/null | awk '{print $1}')"
+# No overlay is an entirely valid installed diagnostic state.
+if [ "$mode" != xml ]; then
+  rm -f "$MODDIR/private/thermallevel_to_fps.xml"
+fi
 cat > "$META" <<EOF
-device=$DEVICE
-source=$TARGET
-source_sha256=$SOURCE_SHA
-overlay=$OVERLAY
-overlay_sha256=$OVERLAY_SHA
-thermal_map_entries=$MAP_COUNT
-framework_thermal_switch=1
-interface_mode=feature-probed
-thermal_fps_target=120
-architecture=one-shot-post-fs-data-private-bind
-scene_profile_directory=/data/vendor/thermal/config
+schema=3
+device=$(getprop ro.product.device)
+mode=$mode
+source=$source_path
+source_sha256=$source_sha
+overlay_sha256=$overlay_sha
+thermal_map_entries=$entry_count
+thermal_fps_target=$target_fps
+framework_thermal_switch=$framework
+reason=$reason
 EOF
 
-set_perm "$OVERLAY" 0 0 0644
+# Restore the original mounting scheme without writing into Scene's thermal
+# config profiles. Keep private only; post-fs-data owns the early bind.
+rm -f "$MODDIR/vendor/etc/display/thermallevel_to_fps.xml" \
+      "$MODDIR/system/vendor/etc/display/thermallevel_to_fps.xml"
+[ "$mode" != xml ] || set_perm "$MODDIR/private/thermallevel_to_fps.xml" 0 0 0644
 set_perm "$META" 0 0 0644
-set_perm "$MODPATH/post-fs-data.sh" 0 0 0755
-set_perm "$MODPATH/service.sh" 0 0 0755
-chcon u:object_r:vendor_configs_file:s0 "$OVERLAY" 2>/dev/null || abort_compat "vendor XML SELinux label incompatible"
-
-ui_print "- Device: $DEVICE"
-ui_print "- OEM thermal capability: ThermalLevelMap supported"
-ui_print "- Vendor XML schema and original-source fingerprint validated"
-ui_print "- Generated $MAP_COUNT-entry private thermal FPS map"
-ui_print "- Thermal FPS ceiling normalized to 120 Hz"
-ui_print "- HyperOS dynamic refresh scheduling remains enabled"
-ui_print "- One-shot early mount and framework thermal vote cleanup; no daemon or polling"
-ui_print "- Reboot is required"
-
+set_perm_recursive "$MODDIR/bin" 0 0 0755 0755
+set_perm "$MODDIR/post-fs-data.sh" 0 0 0755
+set_perm "$MODDIR/service.sh" 0 0 0755
+set_perm "$MODDIR/action.sh" 0 0 0755
+echo "INSTALLED: mode=$mode; $reason" > "$STATUS"
+ui_print "- Device: $(getprop ro.product.device); capability mode: $mode"
+ui_print "- $reason"
+ui_print "- Thermal XML target: ${target_fps}Hz; entries: $entry_count"
+ui_print "- Interface missing = installed diagnostics, not installation failure"
+ui_print "- CPU/GPU, battery and charging thermal protections untouched"
+ui_print "- The module rechecks vendor XML after every reboot/OTA"
+ui_print "- Reboot to activate; inspect the Magisk module description/status"

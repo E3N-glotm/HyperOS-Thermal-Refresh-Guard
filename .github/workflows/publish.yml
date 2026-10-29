@@ -8,6 +8,8 @@ on:
       - 'module/customize.sh'
       - 'module/post-fs-data.sh'
       - 'module/service.sh'
+      - 'module/action.sh'
+      - 'module/bin/**'
       - 'tests/test_module.sh'
       - '.github/workflows/publish.yml'
   workflow_dispatch:
@@ -41,11 +43,11 @@ jobs:
           fi
           checksum="$(sha256sum "$zip" | awk '{print $1}')"
           {
-            echo "Capability-detected pudding display thermal FPS module, independent of Android/HyperOS build string."
+            echo "v1.5.0 cross-device capability detection: no device/ROM allowlist. Installs without rejecting missing interfaces; incompatible devices report unsupported/partial in Magisk."
             echo
-            echo "Validated: cold-boot vendor thermal map bind, PowerKeeper thermal FPS setting gate, no framework 60-Hz thermal vote under observed conditions. Not guaranteed for all apps or thermal states."
+            echo "Existing pudding baseline validated the vendor thermal map and PowerKeeper route. Xiaomi 15 Pro (haotian) installation has only been simulated; no actual haotian ROM/thermal outcome claim."
             echo
-            echo "Installer probes ThermalLevelMap XML, FPS property and PID1 mount. The OEM source fingerprint is pinned at install time and revalidated each boot; OTA XML changes require reinstall. CPU/GPU and battery thermal protections remain unchanged."
+            echo "Installer probes real vendor/odm/product ThermalLevelMap XML and PowerKeeper property, reports status, and attempts safe automatic regeneration after OTA XML updates. Unknown schemas or SELinux labels are skipped; CPU/GPU and battery thermal protections remain unchanged."
             echo
             echo "Magisk ZIP SHA256: \`$checksum\`"
           } > RELEASE_NOTES.md

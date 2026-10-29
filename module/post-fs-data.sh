@@ -1,52 +1,71 @@
 #!/system/bin/sh
-
-# Runs once during Magisk's early boot stage, before SurfaceFlinger loads the
-# thermal FPS map. Does not change Scene's /data/vendor/thermal/config files.
-MODDIR="${0%/*}"
-TARGET="/vendor/etc/display/thermallevel_to_fps.xml"
-SOURCE="$MODDIR/private/thermallevel_to_fps.xml"
-STATUS="$MODDIR/boot-status.txt"
+# One-shot early boot. Validate actual OEM XML and regenerate after OTA;
+# never keep mounting stale content onto a changed vendor source.
+MODDIR=${0%/*}
+. "$MODDIR/bin/capability.sh"
 META="$MODDIR/compatibility.txt"
+STATUS="$MODDIR/boot-status.txt"
 report() { printf '%s\n' "$1" > "$STATUS"; }
-sha() { sha256sum "$1" 2>/dev/null | cut -d ' ' -f1; }
-valid() { [ "$(expr "$1" : '[a-f0-9]*$')" = 64 ]; }
-[ "$(getprop ro.product.device)" = pudding ] || { report 'SKIPPED: display hardware profile changed'; exit 0; }
-[ -x /system/bin/nsenter ] && [ -r "$META" ] ||
-  { report 'SKIPPED: mount interface or install metadata missing'; exit 0; }
-SOURCE_SHA="$(sed -n 's/^source_sha256=//p' "$META")"
-OVERLAY_SHA="$(sed -n 's/^overlay_sha256=//p' "$META")"
-COUNT="$(sed -n 's/^thermal_map_entries=//p' "$META")"
-valid "$SOURCE_SHA" && valid "$OVERLAY_SHA" ||
-  { report 'SKIPPED: invalid source/overlay SHA metadata'; exit 0; }
-[ "$COUNT" -ge 1 ] && [ "$COUNT" -le 64 ] 2>/dev/null ||
-  { report 'SKIPPED: unsupported XML entry count'; exit 0; }
-[ -r "$TARGET" ] && [ -r "$SOURCE" ] &&
-[ -n "$(getprop ro.vendor.fps.switch.thermal)" ] &&
-[ "$(sha "$TARGET")" = "$SOURCE_SHA" ] &&
-[ "$(sha "$SOURCE")" = "$OVERLAY_SHA" ] &&
-[ "$(grep -c '<ThermalLevelMap[[:space:]]' "$SOURCE")" = "$COUNT" ] &&
-[ "$(grep '<ThermalLevelMap[[:space:]]' "$SOURCE" | grep -c 'fps="120"')" = "$COUNT" ] ||
-  { report 'SKIPPED: thermal API changed or source fingerprint invalid; reinstall to reprobe'; exit 0; }
-if /system/bin/nsenter -t 1 -m -- /system/bin/mount --bind "$SOURCE" "$TARGET"; then
-  if [ "$(sha "$TARGET")" = "$OVERLAY_SHA" ]; then
-    # PowerKeeper independently writes Settings.System thermal_limit_refresh_rate
-    # on this exact ROM. The XML alone cannot neutralize that framework vote.
-    # This property gates only the PowerKeeper write to that key; the vendor
-    # DisplayFeature request and ordinary dynamic scheduling still execute.
-    # Set it before PowerKeeper constructs DisplayFrameSetting.
-    if command -v resetprop >/dev/null 2>&1 &&
-       resetprop ro.vendor.fps.switch.thermal false &&
-       [ "$(getprop ro.vendor.fps.switch.thermal)" = false ]; then
-      report 'MOUNTED: thermal XML active; PowerKeeper framework thermal setting writes gated'
-    else
-      report 'PARTIAL: thermal XML active but PowerKeeper thermal property override failed'
+get_meta() { sed -n "s/^$1=//p" "$META" | head -n 1; }
+sha() { sha256sum "$1" 2>/dev/null | cut -d' ' -f1; }
+[ -r "$META" ] || { report 'SKIPPED: install metadata missing'; exit 0; }
+mode=$(get_meta mode)
+framework=$(get_meta framework_thermal_switch)
+source=$(get_meta source)
+case "$mode" in
+  xml)
+    # Only the audited fixed candidate paths may be mounted.
+    case "$source" in
+      /vendor/etc/display/thermallevel_to_fps.xml|/odm/etc/display/thermallevel_to_fps.xml|/product/etc/display/thermallevel_to_fps.xml) ;;
+      *) report 'SKIPPED: invalid vendor source path'; exit 0 ;;
+    esac
+    [ -x /system/bin/nsenter ] && [ -r "$source" ] ||
+      { report 'SKIPPED: XML path/mount interface unavailable'; exit 0; }
+    validate_map "$source" ||
+      { report 'SKIPPED: OEM XML schema changed/unknown; stock retained'; exit 0; }
+    current_sha=$(sha "$source")
+    overlay="$MODDIR/private/thermallevel_to_fps.xml"
+    expected=$(get_meta source_sha256)
+    overlay_sha=$(get_meta overlay_sha256)
+    if [ "$current_sha" != "$expected" ] || [ ! -r "$overlay" ] ||
+       [ "$(sha "$overlay")" != "$overlay_sha" ]; then
+      # Regenerate using this boot's OEM source, never reuse the old
+      # fingerprint against an OTA-updated file.
+      tmp="$MODDIR/private/.thermallevel_to_fps.new"
+      generate_map "$source" "$tmp" "$TG_TARGET_FPS" ||
+        { rm -f "$tmp"; report 'SKIPPED: new OEM XML failed generation'; exit 0; }
+      chmod 0644 "$tmp"
+      apply_source_context "$source" "$tmp" ||
+        { rm -f "$tmp"; report 'SKIPPED: OEM XML SELinux context unsupported'; exit 0; }
+      mv -f "$tmp" "$overlay"
+      overlay_sha=$(sha "$overlay")
+      sed -i "s/^source_sha256=.*/source_sha256=$current_sha/;s/^overlay_sha256=.*/overlay_sha256=$overlay_sha/;s/^thermal_map_entries=.*/thermal_map_entries=$TG_COUNT/;s/^thermal_fps_target=.*/thermal_fps_target=$TG_TARGET_FPS/" "$META"
     fi
+    # Always recheck the transformed content before touching PID1's mount.
+    [ "$(grep -c '<ThermalLevelMap[[:space:]]' "$overlay" 2>/dev/null)" = "$TG_COUNT" ] &&
+    [ "$(grep '<ThermalLevelMap[[:space:]]' "$overlay" | grep -c "fps=\"$TG_TARGET_FPS\"")" = "$TG_COUNT" ] ||
+      { report 'SKIPPED: overlay failed verification'; exit 0; }
+    if ! /system/bin/nsenter -t 1 -m -- /system/bin/mount --bind "$overlay" "$source"; then
+      report 'FAILED: early vendor XML bind failed; stock retained'
+      exit 0
+    fi
+    [ "$(sha "$source")" = "$overlay_sha" ] ||
+      { /system/bin/nsenter -t 1 -m -- /system/bin/umount "$source" 2>/dev/null; report 'FAILED: bind verification mismatch'; exit 0; }
+    prefix="MOUNTED: ${TG_TARGET_FPS}Hz OEM XML map active"
+    ;;
+  framework) prefix='FRAMEWORK_ONLY: vendor XML unavailable';;
+  *) report 'UNSUPPORTED: no verified thermal FPS control interface; stock retained'; exit 0;;
+esac
+
+if [ "$framework" = 1 ] && [ -n "$(getprop ro.vendor.fps.switch.thermal)" ]; then
+  if command -v resetprop >/dev/null 2>&1 &&
+     resetprop ro.vendor.fps.switch.thermal false &&
+     [ "$(getprop ro.vendor.fps.switch.thermal)" = false ]; then
+    report "$prefix; PowerKeeper property gated"
   else
-    /system/bin/nsenter -t 1 -m -- /system/bin/umount "$TARGET" 2>/dev/null || true
-    report 'FAILED: bind verification mismatch; stock retained'
+    report "$prefix; PARTIAL PowerKeeper property gate failed"
   fi
 else
-  report 'FAILED: early bind mount failed; stock retained'
+  report "$prefix; framework thermal FPS property unavailable"
 fi
-
 exit 0

@@ -1,7 +1,7 @@
 id=hyperos_thermal_refresh_guard
 name=HyperOS Thermal Refresh Guard
-version=1.4.0
-versionCode=140
+version=1.5.0
+versionCode=150
 author=E3N
-description=按显示热控 XML 和 PowerKeeper 实际接口处理热限帧，不强制常驻 120Hz；系统升级修改原厂配置时拒绝继续挂载旧文件，保留 CPU/GPU/电池保护。
+description=状态: 等待重启检测 | 自动识别显示热控 XML/PowerKeeper，支持 OTA 重新检测；无接口也可安装并报告。
 
