@@ -117,6 +117,7 @@ chmod +x "$TMP/bin/getprop"
 # but a literal '|' in the Magisk description previously broke sed -i.
 mkdir -p "$TMP/live"
 cp "$MOD/service.sh" "$TMP/live/service.sh"
+cp "$MOD/post-mount.sh" "$TMP/live/post-mount.sh"
 cat > "$TMP/live/module.prop" <<'EOF'
 id=hyperos_thermal_refresh_guard
 name=HyperOS Thermal Refresh Guard

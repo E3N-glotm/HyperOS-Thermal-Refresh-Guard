@@ -5,6 +5,10 @@ MODDIR=${0%/*}
 . "$MODDIR/bin/capability.sh"
 META="$MODDIR/compatibility.txt"
 STATUS="$MODDIR/boot-status.txt"
+touch "$MODDIR/skip_mount"
+for partition in vendor odm product; do
+  rm -f "$MODDIR/system/$partition/etc/display/thermallevel_to_fps.xml"
+done
 report() { printf '%s\n' "$1" > "$STATUS"; }
 get_meta() { sed -n "s/^$1=//p" "$META" | head -n 1; }
 sha() { sha256sum "$1" 2>/dev/null | cut -d' ' -f1; }
@@ -19,7 +23,7 @@ case "$mode" in
       /vendor/etc/display/thermallevel_to_fps.xml|/odm/etc/display/thermallevel_to_fps.xml|/product/etc/display/thermallevel_to_fps.xml) ;;
       *) report 'SKIPPED: invalid vendor source path'; exit 0 ;;
     esac
-    [ -x /system/bin/nsenter ] && [ -r "$source" ] ||
+    [ -r "$source" ] ||
       { report 'SKIPPED: XML path/mount interface unavailable'; exit 0; }
     validate_map "$source" ||
       { report 'SKIPPED: OEM XML schema changed/unknown; stock retained'; exit 0; }
@@ -61,13 +65,25 @@ case "$mode" in
     [ "$(grep -c '<ThermalLevelMap[[:space:]]' "$overlay" 2>/dev/null)" = "$TG_COUNT" ] &&
     [ "$(grep '<ThermalLevelMap[[:space:]]' "$overlay" | grep -c "fps=\"$target\"")" = "$TG_COUNT" ] ||
       { report 'SKIPPED: overlay failed verification'; exit 0; }
-    if ! /system/bin/nsenter -t 1 -m -- /system/bin/mount --bind "$overlay" "$source"; then
-      report 'FAILED: early vendor XML bind failed; stock retained'
-      exit 0
+    if has_metamodule; then
+      managed="$MODDIR/system$source"
+      if ! mkdir -p "${managed%/*}" || ! cp -f "$overlay" "$managed" ||
+         ! chmod 0644 "$managed" || ! apply_source_context "$source" "$managed"; then
+        report 'FAILED: metamodule XML preparation failed'
+        exit 0
+      fi
+      rm -f "$MODDIR/skip_mount"
+      prefix="PREPARED: ${target}Hz OEM XML awaiting metamodule mounting"
+    else
+      if [ ! -x /system/bin/nsenter ] ||
+         ! /system/bin/nsenter -t 1 -m -- /system/bin/mount --bind "$overlay" "$source"; then
+        report 'FAILED: early vendor XML bind failed; stock retained'
+        exit 0
+      fi
+      [ "$(sha "$source")" = "$overlay_sha" ] ||
+        { /system/bin/nsenter -t 1 -m -- /system/bin/umount "$source" 2>/dev/null; report 'FAILED: bind verification mismatch'; exit 0; }
+      prefix="MOUNTED: ${target}Hz OEM XML map active"
     fi
-    [ "$(sha "$source")" = "$overlay_sha" ] ||
-      { /system/bin/nsenter -t 1 -m -- /system/bin/umount "$source" 2>/dev/null; report 'FAILED: bind verification mismatch'; exit 0; }
-    prefix="MOUNTED: ${target}Hz OEM XML map active"
     ;;
   framework) prefix='FRAMEWORK_ONLY: vendor XML unavailable';;
   *) report 'UNSUPPORTED: no verified thermal FPS control interface; stock retained'; exit 0;;
