@@ -3,7 +3,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 MOD="$ROOT/module"
 for f in "$MOD"/*.sh "$MOD"/bin/*.sh; do sh -n "$f"; done
-grep -q '^version=1.5.2$' "$MOD/module.prop"
+grep -q '^version=1.5.3$' "$MOD/module.prop"
 grep -q '^id=hyperos_thermal_refresh_guard$' "$MOD/module.prop"
 grep -Fq 'description=状态: 待重启 | 显示热限帧优化' "$MOD/module.prop"
 ! grep -Eq '绝不|固定封顶|不允许|我说|你说' "$MOD/module.prop"
@@ -121,7 +121,7 @@ cp "$MOD/post-mount.sh" "$TMP/live/post-mount.sh"
 cat > "$TMP/live/module.prop" <<'EOF'
 id=hyperos_thermal_refresh_guard
 name=HyperOS Thermal Refresh Guard
-version=1.5.2
+version=1.5.3
 description=状态: 待重启 | 显示热限帧优化
 EOF
 echo 'thermal_fps_target=144' > "$TMP/live/compatibility.txt"

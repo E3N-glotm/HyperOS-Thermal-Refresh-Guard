@@ -10,7 +10,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Static checks
-        run: bash tests/test_module.sh
+        run: |
+          bash tests/test_module.sh
+          bash tests/test_mount_branch.sh
       - name: Build Magisk ZIP
         run: bash build.sh
       - name: Test ZIP

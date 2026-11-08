@@ -7,10 +7,12 @@ on:
       - 'module/module.prop'
       - 'module/customize.sh'
       - 'module/post-fs-data.sh'
+      - 'module/post-mount.sh'
       - 'module/service.sh'
       - 'module/action.sh'
       - 'module/bin/**'
       - 'tests/test_module.sh'
+      - 'tests/test_mount_branch.sh'
       - '.github/workflows/publish.yml'
   workflow_dispatch:
 
@@ -25,6 +27,7 @@ jobs:
       - name: Validate module and build installable ZIP
         run: |
           bash tests/test_module.sh
+          bash tests/test_mount_branch.sh
           bash build.sh
           version="$(sed -n 's/^version=//p' module/module.prop)"
           test -n "$version"
@@ -49,8 +52,10 @@ jobs:
             echo
             echo "Installer probes real vendor/odm/product ThermalLevelMap XML and PowerKeeper property, reports status, and attempts safe automatic regeneration after OTA XML updates. Unknown schemas or SELinux labels are skipped; CPU/GPU and battery thermal protections remain unchanged."
             echo
+            echo "v1.5.3: adds Metamodule-aware managed XML staging and post-mount SHA-256 verification, while preserving the original nsenter bind path without a Metamodule. Contribution: newbieeming (PR #1)."
+            echo
             echo "Magisk ZIP SHA256: \`$checksum\`"
           } > RELEASE_NOTES.md
           git tag "$tag"
           git push origin "$tag"
-          gh release create "$tag" "$zip" --title "HyperOS Thermal Refresh Guard $tag" --notes-file RELEASE_NOTES.md --prerelease
+          gh release create "$tag" "$zip" --title "HyperOS Thermal Refresh Guard $tag" --notes-file RELEASE_NOTES.md --latest
