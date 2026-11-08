@@ -93,14 +93,26 @@ framework_thermal_switch=$framework
 reason=$reason
 EOF
 
-# Restore the original mounting scheme without writing into Scene's thermal
-# config profiles. Keep private only; post-fs-data owns the early bind.
-rm -f "$MODDIR/vendor/etc/display/thermallevel_to_fps.xml" \
-      "$MODDIR/system/vendor/etc/display/thermallevel_to_fps.xml"
+# Stage a standard overlay only when an enabled metamodule will mount it.
+rm -f "$MODDIR/vendor/etc/display/thermallevel_to_fps.xml"
+for partition in vendor odm product; do
+  rm -f "$MODDIR/system/$partition/etc/display/thermallevel_to_fps.xml"
+done
+touch "$MODDIR/skip_mount"
+if [ "$mode" = xml ] && has_metamodule; then
+  managed="$MODDIR/system$source_path"
+  if mkdir -p "${managed%/*}" &&
+     cp -f "$MODDIR/private/thermallevel_to_fps.xml" "$managed" &&
+     apply_source_context "$source_path" "$managed"; then
+    set_perm "$managed" 0 0 0644
+    rm -f "$MODDIR/skip_mount"
+  fi
+fi
 [ "$mode" != xml ] || set_perm "$MODDIR/private/thermallevel_to_fps.xml" 0 0 0644
 set_perm "$META" 0 0 0644
 set_perm_recursive "$MODDIR/bin" 0 0 0755 0755
 set_perm "$MODDIR/post-fs-data.sh" 0 0 0755
+set_perm "$MODDIR/post-mount.sh" 0 0 0755
 set_perm "$MODDIR/service.sh" 0 0 0755
 set_perm "$MODDIR/action.sh" 0 0 0755
 echo "INSTALLED: mode=$mode; $reason" > "$STATUS"

@@ -1,6 +1,15 @@
 #!/system/bin/sh
 # Shell-only XML schema checks shared by installer and early boot. Never
 # generalize this XML transformation to arbitrary thermal or charging files.
+has_metamodule() {
+  for meta_dir in "${1:-/data/adb/modules}"/*; do
+    [ -r "$meta_dir/module.prop" ] || continue
+    [ ! -e "$meta_dir/disable" ] && [ ! -e "$meta_dir/remove" ] || continue
+    grep -Eq '^metamodule=(1|true)[[:space:]]*$' "$meta_dir/module.prop" && return 0
+  done
+  return 1
+}
+
 valid_sha() {
   printf '%s\n' "$1" | grep -Eq '^[0-9a-f]{64}$'
 }

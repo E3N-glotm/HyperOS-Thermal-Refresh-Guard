@@ -27,6 +27,7 @@ refresh_ui() {
   fi
   rm -f "$tmp"
 }
+sh "$MODDIR/post-mount.sh"
 boot=$(cat "$STATUS" 2>/dev/null)
 case "$boot" in
   MOUNTED:*) level='已生效'; detail="热控映射: ${target}Hz";;
